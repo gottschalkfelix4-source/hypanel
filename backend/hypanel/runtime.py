@@ -97,7 +97,8 @@ def launch(server, install=False):
             ports={} if install else {f"{server['port']}/udp": server["port"]},
             mem_limit=f"{server['memory_mb']}m", nano_cpus=int(server["cpus"] * 1_000_000_000),
             cap_drop=["ALL"], security_opt=["no-new-privileges:true"], read_only=True,
-            tmpfs={"/tmp": "rw,noexec,nosuid,size=256m"}, pids_limit=512,
+            # QUIC loads a native Netty shared library from /tmp; noexec prevents Hytale boot.
+            tmpfs={"/tmp": "rw,nosuid,nodev,size=256m"}, pids_limit=512,
             labels={"io.hypanel.instance": INSTANCE, "io.hypanel.server": sid, "io.hypanel.kind": "install" if install else "server"},
             restart_policy={"Name": "on-failure", "MaximumRetryCount": 3} if server["autorestart"] and not install else {"Name": "no"},
             log_config=docker.types.LogConfig(type="json-file", config={"max-size": "20m", "max-file": "3"}),

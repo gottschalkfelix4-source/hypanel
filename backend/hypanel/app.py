@@ -173,7 +173,14 @@ class ServerSpec(BaseModel):
 def list_servers(user: User):
     rows = store.query("SELECT * FROM servers ORDER BY created") if user["role"] == "admin" else store.query(
         "SELECT s.* FROM servers s JOIN access a ON s.id=a.server_id WHERE a.user_id=? ORDER BY created", (user["id"],))
-    return [runtime.state(s) for s in rows]
+    return [server_state(s, user) for s in rows]
+
+
+def server_state(server, user, metrics=False):
+    result = runtime.state(server, metrics=metrics)
+    permission = "admin" if user["role"] == "admin" else store.query(
+        "SELECT permission FROM access WHERE server_id=? AND user_id=?", (server["id"], user["id"]), one=True)["permission"]
+    return dict(result, permission=permission)
 
 
 def insert_server(body):
@@ -197,12 +204,12 @@ def create_server(body: ServerSpec, user: User):
     admin(user)
     server = insert_server(body)
     audit(user, "server.create", server["id"], body.name)
-    return runtime.state(server)
+    return server_state(server, user)
 
 
 @app.get("/api/servers/{sid}")
 def get_server(sid: str, user: User):
-    return runtime.state(access(user, sid), metrics=True)
+    return server_state(access(user, sid), user, metrics=True)
 
 
 @app.put("/api/servers/{sid}")
@@ -215,7 +222,7 @@ def edit_server(sid: str, body: ServerSpec, user: User):
         store.execute("UPDATE servers SET name=?,port=?,memory_mb=?,cpus=?,autostart=?,autorestart=?,patchline=? WHERE id=?",
                       (body.name, body.port, body.memory_mb, body.cpus, body.autostart, body.autorestart, body.patchline, sid))
         audit(user, "server.edit", sid)
-    return runtime.state(access(user, sid))
+    return server_state(access(user, sid), user)
 
 
 @app.delete("/api/servers/{sid}")
@@ -260,7 +267,7 @@ def clone_server(sid: str, body: ServerSpec, user: User):
             shutil.rmtree(root(new["id"]), ignore_errors=True)
             raise
         audit(user, "server.clone", new["id"], sid)
-    return runtime.state(new)
+    return server_state(new, user)
 
 
 @app.post("/api/servers/{sid}/power/{action}")
@@ -272,7 +279,7 @@ def power(sid: str, action: Literal["start", "stop", "restart", "kill"], user: U
         if action in {"start", "restart"}:
             runtime.launch(server)
         audit(user, "server." + action, sid)
-    return runtime.state(server)
+    return server_state(server, user)
 
 
 @app.post("/api/servers/{sid}/install")
@@ -311,7 +318,7 @@ def logs(sid: str, user: User, install: bool = False, download: bool = False):
     access(user, sid)
     if install:
         admin(user)
-    content = clean_logs(runtime.logs(sid, install))
+    content = clean_logs(runtime.logs(sid, install, tail="all" if download else 500))
     if download:
         return Response(content, media_type="text/plain", headers={"Content-Disposition": 'attachment; filename="console.log"'})
     return {"logs": content}
