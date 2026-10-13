@@ -19,6 +19,7 @@ def main():
         parser.error("Passwörter stimmen nicht überein")
     store.execute("UPDATE users SET password=?,disabled=0 WHERE id=?", (hash_password(password), user["id"]))
     store.execute("DELETE FROM sessions WHERE user_id=?", (user["id"],))
+    store.execute("DELETE FROM tokens WHERE user_id=?", (user["id"],))
     audit("host-admin", "auth.password_reset", detail=args.username)
     print("Passwort geändert; bestehende Sessions widerrufen.")
 

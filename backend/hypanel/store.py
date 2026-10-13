@@ -46,6 +46,9 @@ def init():
           command TEXT NOT NULL DEFAULT '', enabled INTEGER DEFAULT 1, next_run REAL NOT NULL,
           last_run REAL, last_result TEXT);
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS tokens(id TEXT PRIMARY KEY, token TEXT UNIQUE NOT NULL,
+          user_id TEXT REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL,
+          created REAL NOT NULL, expires REAL NOT NULL);
         ''')
 
 

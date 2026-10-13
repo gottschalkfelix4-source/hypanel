@@ -40,7 +40,7 @@ function modal(title, content, submit, label = 'Speichern') {
   $('#cancel').onclick = () => dialog.close();
   $('#modal-form').onsubmit = async e => {
     e.preventDefault(); const b = $('button[type=submit]', e.target); b.disabled = true;
-    try { await submit(formValues(e.target), e.target); dialog.close(); }
+    try { const close = await submit(formValues(e.target), e.target); if (close !== false) dialog.close(); }
     catch (error) { $('#modal-error').textContent = error.message; $('#modal-error').hidden = false; }
     finally { b.disabled = false; }
   };
@@ -225,7 +225,10 @@ async function renderSystem() {
   bind('#refresh-system','click',renderSystem);bind('#system-settings','submit',async(e,n)=>{await api('/system','PUT',{backup_retention:Number(formValues(n).backup_retention)});notify('Aufbewahrung gespeichert');});
 }
 async function renderAccount() {
-  $('#content').innerHTML=`<h1>Mein Konto</h1><div class="section"><h2>Passwort ändern</h2><form id="password-form"><label>Aktuelles Passwort<input name="current" type="password" required autocomplete="current-password"></label><label>Neues Passwort<input name="password" type="password" required minlength="12" autocomplete="new-password"></label><button type="submit" class="primary">Passwort ändern</button></form></div>`;
+  const tokens=await api('/me/tokens');
+  $('#content').innerHTML=`<h1>Mein Konto</h1><div class="section"><h2>Passwort ändern</h2><form id="password-form"><label>Aktuelles Passwort<input name="current" type="password" required autocomplete="current-password"></label><label>Neues Passwort<input name="password" type="password" required minlength="12" autocomplete="new-password"></label><button type="submit" class="primary">Passwort ändern</button></form></div><div class="section"><div class="titlebar"><h2>API-Schlüssel</h2><button id="new-token">Schlüssel erstellen</button></div>${table(['Name','Gültig bis',''],tokens.map(t=>`<tr><td>${escape(t.name)}</td><td>${date(t.expires)}</td><td><button data-revoke-token="${t.id}" class="danger">Widerrufen</button></td></tr>`),'Keine API-Schlüssel.')}<p class="small muted">REST-Aufrufe mit Authorization: Bearer. Schlüssel erhalten deine Benutzerrechte und werden beim Passwortwechsel widerrufen.</p></div>`;
   bind('#password-form','submit',async(e,n)=>{await api('/me/password','POST',formValues(n));user=null;disconnect();notify('Passwort geändert. Bitte erneut anmelden.');await auth();});
+  bind('#new-token','click',()=>modal('API-Schlüssel erstellen','<label>Name<input name="name" required maxlength="80"></label><label>Gültigkeit (Tage)<input name="days" type="number" min="1" max="365" value="90" required></label>',async v=>{const result=await api('/me/tokens','POST',{name:v.name,days:Number(v.days)});await renderAccount();$('#dialog-content').innerHTML=`<h2>API-Schlüssel erstellt</h2><p>Jetzt sicher kopieren. Der Schlüssel wird nur einmal angezeigt.</p><label>Schlüssel<input id="token-value" readonly value="${escape(result.token)}"></label><div class="form-actions"><button id="token-close">Schließen</button></div>`;$('#token-close').onclick=()=>$('#dialog').close();$('#token-value').select();return false;}));
+  bind('[data-revoke-token]','click',(_,n)=>confirmAction('API-Schlüssel widerrufen','Dieser Schlüssel verliert sofort den Zugriff.',async()=>{await api('/me/tokens/'+n.dataset.revokeToken,'DELETE');await renderAccount();},'Widerrufen'));
 }
 try {user=await api('/me');await navigate('servers');}catch{await auth();}

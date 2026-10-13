@@ -32,6 +32,14 @@ def verify_password(encoded, value):
 
 
 def current_user(request: Request):
+    authorization = request.headers.get("authorization", "")
+    if authorization:
+        scheme, _, token = authorization.partition(" ")
+        row = store.query("SELECT u.id,u.username,u.role FROM tokens t JOIN users u ON t.user_id=u.id "
+                          "WHERE t.token=? AND t.expires>? AND u.disabled=0", (digest(token), time.time()), one=True) if scheme.lower() == "bearer" else None
+        if not row:
+            raise HTTPException(401, "Ungültiger API-Schlüssel")
+        return dict(row, csrf="")
     token = request.cookies.get("hypanel_session", "")
     row = store.query("SELECT u.id,u.username,u.role,s.csrf FROM sessions s JOIN users u ON s.user_id=u.id "
                       "WHERE s.token=? AND s.expires>? AND u.disabled=0", (digest(token), time.time()), one=True)
@@ -63,6 +71,8 @@ def access(user, sid, write=False, manage=False):
 def audit(user, action, sid=None, detail=""):
     store.execute("INSERT INTO audit(at,user,action,server_id,detail) VALUES(?,?,?,?,?)",
                   (time.time(), user["username"] if isinstance(user, dict) else user, action, sid, detail[:1000]))
+    # Retain useful history without unbounded database growth.
+    store.execute("DELETE FROM audit WHERE id<(SELECT MAX(id)-20000 FROM audit)")
 
 
 def check_origin(request):

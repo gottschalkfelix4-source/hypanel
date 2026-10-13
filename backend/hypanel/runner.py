@@ -32,7 +32,7 @@ def install():
     archive = GAME / ".download.zip"
     extracted = GAME / ".download-staging"
     print("[HyPanel] Offizieller Hytale-Downloader. Gerätecode hier in der Konsole bestätigen.", flush=True)
-    result = subprocess.call(["/opt/hytale-downloader", "-download-path", str(archive),
+    result = subprocess.call(["/opt/hytale-downloader", "-skip-update-check", "-download-path", str(archive),
                               "-credentials-path", str(GAME / ".hytale-downloader-credentials.json"),
                               "-patchline", os.environ.get("PATCHLINE", "release")], cwd=GAME)
     if result:

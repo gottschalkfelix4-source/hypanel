@@ -44,14 +44,14 @@ def atomic_write(path, content):
             f.flush()
             os.fsync(f.fileno())
         os.replace(temporary, path)
-        if os.name != "nt":
+        if os.name != "nt" and os.geteuid() == 0:
             os.chown(path, 99, 100)
     finally:
         temporary.unlink(missing_ok=True)
 
 
 def owned_tree(path):
-    if os.name != "nt":
+    if os.name != "nt" and os.geteuid() == 0:
         for p in [path, *path.rglob("*")]:
             if not p.is_symlink():
                 os.chown(p, 99, 100)

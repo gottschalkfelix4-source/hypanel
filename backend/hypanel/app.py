@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from . import store, runtime, operations
 from .files import root, safe_path, atomic_write, extract_zip, owned_tree, PROTECTED
 from .security import current_user, admin, access, audit, check_origin, hash_password, verify_password, throttle, digest
+from .limits import UploadLimitMiddleware
 
 User = Annotated[dict, Depends(current_user)]
 VERSION = "0.1.0"
@@ -52,6 +53,7 @@ async def lifespan(app):
 
 
 app = FastAPI(title="HyPanel", version=VERSION, lifespan=lifespan)
+app.add_middleware(UploadLimitMiddleware)
 
 
 @app.middleware("http")
@@ -152,6 +154,7 @@ def change_password(body: PasswordChange, user: User):
         raise HTTPException(403, "Aktuelles Passwort falsch")
     store.execute("UPDATE users SET password=? WHERE id=?", (hash_password(body.password), user["id"]))
     store.execute("DELETE FROM sessions WHERE user_id=?", (user["id"],))
+    store.execute("DELETE FROM tokens WHERE user_id=?", (user["id"],))
     audit(user, "auth.password_changed")
     return {"ok": True}
 
@@ -647,6 +650,7 @@ def update_user(uid: str, body: UserUpdate, user: User):
     encoded = hash_password(body.password) if body.password else existing["password"]
     store.execute("UPDATE users SET role=?,disabled=?,password=? WHERE id=?", (body.role, body.disabled, encoded, uid))
     store.execute("DELETE FROM sessions WHERE user_id=?", (uid,))
+    store.execute("DELETE FROM tokens WHERE user_id=?", (uid,))
     audit(user, "user.edit", detail=existing["username"])
     return {"ok": True}
 
@@ -705,6 +709,61 @@ def update_settings(body: Settings, user: User):
     admin(user)
     store.set_setting("backup_retention", body.backup_retention)
     audit(user, "settings.edit")
+    return {"ok": True}
+
+
+class TokenSpec(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    days: int = Field(default=90, ge=1, le=365)
+
+
+@app.get("/api/me/tokens")
+def tokens(user: User):
+    return store.query("SELECT id,name,created,expires FROM tokens WHERE user_id=? ORDER BY created DESC", (user["id"],))
+
+
+@app.post("/api/me/tokens", status_code=201)
+def create_token(body: TokenSpec, user: User):
+    if not user["csrf"]:
+        raise HTTPException(403, "Neue API-Schlüssel nur nach Browseranmeldung erstellen")
+    value = "hyp_" + secrets.token_urlsafe(48)
+    tid = uuid.uuid4().hex
+    store.execute("INSERT INTO tokens VALUES(?,?,?,?,?,?)", (tid, digest(value), user["id"], body.name,
+                  time.time(), time.time() + body.days * 86400))
+    audit(user, "token.create", detail=body.name)
+    return {"id": tid, "token": value}
+
+
+@app.delete("/api/me/tokens/{tid}")
+def delete_token(tid: str, user: User):
+    store.execute("DELETE FROM tokens WHERE id=? AND user_id=?", (tid, user["id"]))
+    audit(user, "token.revoke", detail=tid)
+    return {"ok": True}
+
+
+@app.put("/api/servers/{sid}/schedules/{jid}")
+def edit_schedule(sid: str, jid: str, body: Schedule, user: User):
+    access(user, sid, manage=True)
+    if not store.query("SELECT id FROM schedules WHERE id=? AND server_id=?", (jid, sid)):
+        raise HTTPException(404, "Zeitplan nicht gefunden")
+    if body.action == "command" and (not body.command or any(c in body.command for c in "\r\n\x00")):
+        raise HTTPException(400, "Einzelnen Konsolenbefehl angeben")
+    store.execute("UPDATE schedules SET name=?,cron=?,timezone=?,action=?,command=?,enabled=?,next_run=? WHERE id=? AND server_id=?",
+                  (body.name, body.cron, body.timezone, body.action, body.command, body.enabled,
+                   operations.next_run(body.cron, body.timezone), jid, sid))
+    audit(user, "schedule.edit", sid, body.name)
+    return {"ok": True}
+
+
+@app.post("/api/servers/{sid}/schedules/{jid}/run")
+def run_schedule(sid: str, jid: str, user: User):
+    access(user, sid, manage=True)
+    job = store.query("SELECT * FROM schedules WHERE id=? AND server_id=?", (jid, sid), one=True)
+    if not job:
+        raise HTTPException(404, "Zeitplan nicht gefunden")
+    operations.scheduled_action(job)
+    store.execute("UPDATE schedules SET last_run=?,last_result='OK' WHERE id=?", (time.time(), jid))
+    audit(user, "schedule.run", sid, jid)
     return {"ok": True}
 
 
