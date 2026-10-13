@@ -16,9 +16,9 @@ Ein selbst gehostetes Hytale-Serverpanel für Docker und Unraid. Jeder Spielserv
 | Welten | Vorhandene Welten, Weltkonfiguration, Zugriff auf Weltdateien |
 | Spieler | Konsolenaktionen für Liste, Kick, Ban, Whitelist und Operatorrechte; originale Rechte-/Whitelist-/Ban-Dateien |
 | Backups | Daten- oder vollständige ZIP-Backups, Download, Aufbewahrung, Wiederherstellung mit vorherigem Sicherheitsbackup |
-| Zeitpläne | Cron mit IANA-Zeitzone, Start/Stop/Neustart, Backup, Befehl, Downloader-Update; persistente Termine und Ergebnisse |
+| Zeitpläne | Cron mit IANA-Zeitzone, Start/Stop/Neustart, Backup, Befehl, Downloader-Update; bearbeiten, pausieren, sofort ausführen; persistente Termine und Ergebnisse |
 | Benutzer | Administratoren, Mitglieder, Serverzuweisung mit Lese-/Operatorrechten, Passwortwechsel, Deaktivierung und Session-Widerruf |
-| Nachvollziehbarkeit | Aktivitätenprotokoll, System-/Dockerstatus, Healthcheck, OpenAPI unter `/docs` |
+| API und Nachvollziehbarkeit | Widerrufbare API-Schlüssel mit Ablaufdatum, Aktivitätenprotokoll, System-/Dockerstatus, Healthcheck, OpenAPI unter `/docs` |
 | Unraid | DockerMan-Template, Compose, persistentes Appdata, UID/GID 99:100 für Spielserver |
 
 ## Unraid installieren

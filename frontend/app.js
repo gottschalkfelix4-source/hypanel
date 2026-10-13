@@ -99,7 +99,7 @@ function serverForm(existing, clone = false) {
 }
 async function openServer(id) {
   disconnect(); selected = await api(`/servers/${id}`); tab='console'; filePath='Server'; await renderServer();
-  metricsTimer = setInterval(async()=>{if(!selected)return; try {selected=await api(`/servers/${id}`); updateMetrics();}catch{}},5000);
+  metricsTimer = setInterval(async()=>{if(selected?.id!==id)return; try {const current=await api(`/servers/${id}`);if(selected?.id===id){selected=current;updateMetrics();}}catch{}},5000);
 }
 function updateMetrics() {
   if (!$('#server-meta') || !selected) return;
