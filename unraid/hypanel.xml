@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>HyPanel</Name>
+  <Repository>ghcr.io/gottschalkfelix4-source/hypanel:latest</Repository>
+  <Registry>https://ghcr.io/gottschalkfelix4-source/hypanel</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/gottschalkfelix4-source/hypanel/issues</Support>
+  <Project>https://github.com/gottschalkfelix4-source/hypanel</Project>
+  <Overview>Hytale server management with isolated Docker game containers, console, file editor, mods, backups, schedules and users. First setup key: docker exec HyPanel cat /data/setup.key . Game containers publish their own UDP ports. Docker socket access gives the panel Docker administrator privileges; expose the panel only through authenticated access and HTTPS. The Host Data Path must exactly match the Appdata mapping.</Overview>
+  <Category>GameServers:</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/gottschalkfelix4-source/hypanel/main/frontend/icon.svg</Icon>
+  <ExtraParams>--init --security-opt=no-new-privileges:true --log-opt max-size=20m --log-opt max-file=3</ExtraParams>
+  <Config Name="WebUI Port" Target="8080" Default="8095" Mode="tcp" Description="Panel HTTP port; forward HTTPS from your existing reverse proxy." Type="Port" Display="always" Required="true" Mask="false">8095</Config>
+  <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/hypanel" Mode="rw" Description="Persistent panel database, server files and backups. Must match Host Data Path." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/hypanel</Config>
+  <Config Name="Docker Socket" Target="/var/run/docker.sock" Default="/var/run/docker.sock" Mode="rw" Description="Required to manage isolated game containers." Type="Path" Display="advanced" Required="true" Mask="false">/var/run/docker.sock</Config>
+  <Config Name="Host Data Path" Target="HYPANEL_HOST_DATA" Default="/mnt/user/appdata/hypanel" Mode="" Description="Exact host path of the Appdata mapping, for sibling game containers." Type="Variable" Display="always" Required="true" Mask="false">/mnt/user/appdata/hypanel</Config>
+  <Config Name="Runner Image" Target="HYPANEL_RUNNER_IMAGE" Default="ghcr.io/gottschalkfelix4-source/hypanel:latest" Mode="" Description="Use the same release as the panel image." Type="Variable" Display="advanced" Required="true" Mask="false">ghcr.io/gottschalkfelix4-source/hypanel:latest</Config>
+  <Config Name="Public URL" Target="HYPANEL_PUBLIC_URL" Default="" Mode="" Description="Exact browser origin, e.g. https://hytale.example.com; blank for LAN HTTP." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Secure Cookies" Target="HYPANEL_COOKIE_SECURE" Default="false" Mode="" Description="Set true behind an HTTPS reverse proxy." Type="Variable" Display="advanced" Required="true" Mask="false">false</Config>
+  <Config Name="Trusted Proxy" Target="HYPANEL_TRUSTED_PROXIES" Default="127.0.0.1" Mode="" Description="Reverse proxy IP or CIDR. Do not use * on an exposed LAN." Type="Variable" Display="advanced" Required="true" Mask="false">127.0.0.1</Config>
+  <Config Name="Timezone" Target="TZ" Default="Europe/Berlin" Mode="" Description="Display and default host timezone." Type="Variable" Display="advanced" Required="true" Mask="false">Europe/Berlin</Config>
+  <Config Name="Upload Limit GiB" Target="HYPANEL_UPLOAD_LIMIT_GB" Default="16" Mode="" Description="Maximum size of one file upload." Type="Variable" Display="advanced" Required="true" Mask="false">16</Config>
+</Container>

@@ -1,0 +1,24 @@
+services:
+  panel:
+    image: ghcr.io/gottschalkfelix4-source/hypanel:latest
+    container_name: HyPanel
+    restart: unless-stopped
+    init: true
+    ports:
+      - "8095:8080"
+    environment:
+      HYPANEL_HOST_DATA: ${HYPANEL_HOST_DATA:-/mnt/user/appdata/hypanel}
+      HYPANEL_RUNNER_IMAGE: ghcr.io/gottschalkfelix4-source/hypanel:latest
+      HYPANEL_PUBLIC_URL: ${HYPANEL_PUBLIC_URL:-}
+      HYPANEL_COOKIE_SECURE: ${HYPANEL_COOKIE_SECURE:-false}
+      HYPANEL_TRUSTED_PROXIES: ${HYPANEL_TRUSTED_PROXIES:-127.0.0.1}
+      TZ: Europe/Berlin
+    volumes:
+      - ${HYPANEL_HOST_DATA:-/mnt/user/appdata/hypanel}:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      options:
+        max-size: "20m"
+        max-file: "3"
