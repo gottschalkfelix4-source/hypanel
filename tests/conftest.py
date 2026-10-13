@@ -7,6 +7,7 @@ from hypanel.app import app
 
 @pytest.fixture
 def panel(tmp_path, monkeypatch):
+    monkeypatch.setenv('HYPANEL_SFTP_ENABLED', 'false')
     monkeypatch.setattr(store, "DATA", tmp_path)
     monkeypatch.setattr(files, "DATA", tmp_path)
     monkeypatch.setattr(runtime, "active", lambda sid: False)

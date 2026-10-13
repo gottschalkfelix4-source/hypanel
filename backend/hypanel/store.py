@@ -49,6 +49,18 @@ def init():
         CREATE TABLE IF NOT EXISTS tokens(id TEXT PRIMARY KEY, token TEXT UNIQUE NOT NULL,
           user_id TEXT REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL,
           created REAL NOT NULL, expires REAL NOT NULL);
+        CREATE TABLE IF NOT EXISTS metrics(server_id TEXT NOT NULL, at REAL NOT NULL,
+          status TEXT NOT NULL, cpu REAL, memory REAL, players INTEGER, tps REAL,
+          PRIMARY KEY(server_id,at));
+        CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, server_id TEXT, kind TEXT NOT NULL,
+          user TEXT NOT NULL, state TEXT NOT NULL, progress REAL DEFAULT 0, message TEXT DEFAULT '',
+          created REAL NOT NULL, finished REAL, cancel INTEGER DEFAULT 0, cancellable INTEGER DEFAULT 1,
+          result TEXT);
+        CREATE TABLE IF NOT EXISTS known_players(server_id TEXT NOT NULL, uuid TEXT NOT NULL,
+          name TEXT NOT NULL, last_seen REAL NOT NULL, PRIMARY KEY(server_id,uuid));
+        CREATE TABLE IF NOT EXISTS managed_mods(server_id TEXT NOT NULL, project_id INTEGER NOT NULL,
+          file_id INTEGER NOT NULL, filename TEXT NOT NULL, name TEXT NOT NULL,
+          latest_id INTEGER, checked REAL, PRIMARY KEY(server_id,project_id));
         ''')
 
 

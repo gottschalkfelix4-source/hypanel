@@ -12,9 +12,10 @@ if docker container inspect HyPanel >/dev/null 2>&1; then
 fi
 docker run -d --name HyPanel --restart unless-stopped --init \
   --security-opt=no-new-privileges:true --log-opt max-size=20m --log-opt max-file=3 \
-  -p "$PORT:8080" \
+  -p "$PORT:8080" -p "${HYPANEL_SFTP_PUBLIC_PORT:-2223}:2222" \
   -v "$DATA_PATH:/data" -v /var/run/docker.sock:/var/run/docker.sock \
   -e HYPANEL_HOST_DATA="$DATA_PATH" -e HYPANEL_RUNNER_IMAGE="$IMAGE" \
+  -e HYPANEL_SFTP_PUBLIC_PORT="${HYPANEL_SFTP_PUBLIC_PORT:-2223}" \
   -e TZ=Europe/Berlin \
   -l net.unraid.docker.managed=dockerman \
   -l "net.unraid.docker.webui=http://[IP]:[PORT:8080]/" \

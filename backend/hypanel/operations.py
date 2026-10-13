@@ -3,13 +3,14 @@ import os
 import shutil
 import time
 import uuid
+import threading
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from croniter import croniter
 from fastapi import HTTPException
 from . import store, runtime
-from .files import root, create_zip, extract_zip, owned_tree, safe_path
+from .files import root, create_zip, zip_entries, extract_zip, owned_tree, safe_path
 from .security import audit
 
 
@@ -18,9 +19,28 @@ def require_stopped(sid):
         raise HTTPException(409, "Server und Installation müssen zuerst gestoppt werden")
 
 
-def backup(server, user="scheduler", full=False):
+QUOTA_LOCK = threading.RLock()
+
+
+def backup_policy(sid):
+    return {"retention": store.setting("backup_retention:" + sid, store.setting("backup_retention", 10)),
+            "quota_bytes": store.setting("backup_quota_gb:" + sid, 20) * 1024**3,
+            "global_quota_bytes": store.setting("backup_global_quota_gb", 100) * 1024**3}
+
+
+def backup_usage(sid=None):
+    directory = store.DATA / "backups"
+    if sid:
+        directory = directory / sid
+    return sum(p.stat().st_size for p in directory.rglob("*")
+               if p.is_file() and not p.is_symlink() and p.suffix in {".zip", ".partial"})
+
+
+def backup(server, user="scheduler", full=False, ctx=None):
     sid = server["id"]
-    with runtime.lock(sid):
+    with runtime.lock(sid), QUOTA_LOCK:
+        if runtime.EXTERNAL_WRITES.get(sid, 0):
+            raise HTTPException(409, 'Zuerst laufende SFTP-Uploads abschließen')
         if (installer := runtime.container(sid, True)) and installer.status == "running":
             raise HTTPException(409, "Installation läuft")
         running = (c := runtime.container(sid)) and c.status == "running"
@@ -29,13 +49,33 @@ def backup(server, user="scheduler", full=False):
         name = datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8] + ".zip"
         output = directory / name
         temporary = output.with_suffix(".partial")
+        policy = backup_policy(sid)
+        estimate = sum(p.stat().st_size + 512 for p, _ in zip_entries(root(sid), full) if p.is_file()) * 1.01 + 4096
+        if backup_usage(sid) + estimate > policy["quota_bytes"] or backup_usage() + estimate > policy["global_quota_bytes"]:
+            raise HTTPException(409, "Backup-Speicherlimit erreicht. Backups entfernen oder Quote erhöhen.")
+        if shutil.disk_usage(store.DATA).free < estimate:
+            raise HTTPException(409, "Nicht genügend freier Speicher für das Backup")
+        last = 0
+        def progress(done, total):
+            nonlocal last
+            if backup_usage(sid) > policy["quota_bytes"] or backup_usage() > policy["global_quota_bytes"]:
+                raise HTTPException(409, "Backup-Speicherlimit erreicht")
+            if ctx:
+                ctx.check()
+                if time.monotonic() - last > .5:
+                    ctx.update(5 + done / max(1, total) * 85, "Dateien werden gesichert")
+                    last = time.monotonic()
         try:
+            if ctx:
+                ctx.update(2, "Serverzustand wird gesichert")
             if running:
                 runtime.stop(sid)
-            create_zip(root(sid), temporary, binaries=full)
+            create_zip(root(sid), temporary, binaries=full, progress=progress)
+            if ctx:
+                ctx.update(95, "Backup abschließen", cancellable=False)
             os.replace(temporary, output)
             audit(user, "backup.create", sid, name)
-            retention = store.setting("backup_retention", 10)
+            retention = policy["retention"]
             backups = sorted(directory.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
             for p in backups[retention:]:
                 p.unlink()

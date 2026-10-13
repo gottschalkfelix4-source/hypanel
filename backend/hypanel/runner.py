@@ -60,6 +60,34 @@ def install():
         shutil.rmtree(extracted, ignore_errors=True)
 
 
+def prepare_telemetry():
+    directory = GAME / "Server"
+    (directory / ".hypanel-telemetry.json").unlink(missing_ok=True)
+    output = directory / "mods/HyPanelTelemetry.jar"
+    if os.getenv("HYPANEL_TELEMETRY", "true").lower() != "true":
+        output.unlink(missing_ok=True)
+        return
+    import tempfile
+    source = Path(__file__).parent / "telemetry"
+    try:
+        with tempfile.TemporaryDirectory(prefix="hypanel-telemetry-") as temp:
+            classes = Path(temp)
+            result = subprocess.run(["javac", "-proc:none", "-cp", str(directory / "HytaleServer.jar"), "-d", temp,
+                                     str(source / "HyPanelTelemetry.java")], capture_output=True, text=True, timeout=60)
+            if result.returncode:
+                raise RuntimeError(result.stderr[:300])
+            shutil.copy2(source / "manifest.json", classes / "manifest.json")
+            output.parent.mkdir(exist_ok=True)
+            staged = Path(temp) / "plugin.jar"
+            subprocess.run(["jar", "--create", "--file", str(staged), "-C", temp, "io", "-C", temp, "manifest.json"],
+                           check=True, capture_output=True, timeout=30)
+            shutil.copy2(staged, output)
+        print("[HyPanel] Lokales Telemetrie-Plugin für diese Hytale-Version kompiliert.", flush=True)
+    except Exception as error:
+        output.unlink(missing_ok=True)
+        print("[HyPanel] Telemetrie nicht verfügbar: " + str(error)[:300], flush=True)
+
+
 def run():
     shutdown = threading.Event()
     writer_lock = threading.Lock()
@@ -115,7 +143,9 @@ def run():
     heap = max(1024, int(os.environ.get("SERVER_MEMORY_MB", "4096")) - 1024)
     while not shutdown.is_set():
         apply_staged()
+        prepare_telemetry()
         argv = ["java", f"-Xms512m", f"-Xmx{heap}m", "-XX:+UseG1GC", "--enable-native-access=ALL-UNNAMED"]
+        argv.append("-XX:ActiveProcessorCount=" + str(max(1, int(float(os.getenv("SERVER_CPUS", "2"))))))
         if (GAME / "Server/HytaleServer.aot").is_file():
             probe = subprocess.run(["java", "-XX:AOTCache=HytaleServer.aot", "-version"],
                                    cwd=GAME / "Server", capture_output=True, text=True, timeout=15)

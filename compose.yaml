@@ -6,12 +6,16 @@ services:
     init: true
     ports:
       - "8095:8080"
+      - "${HYPANEL_SFTP_PUBLIC_PORT:-2223}:2222"
     environment:
       HYPANEL_HOST_DATA: ${HYPANEL_HOST_DATA:-/mnt/user/appdata/hypanel}
       HYPANEL_RUNNER_IMAGE: ghcr.io/gottschalkfelix4-source/hypanel:latest
       HYPANEL_PUBLIC_URL: ${HYPANEL_PUBLIC_URL:-}
       HYPANEL_COOKIE_SECURE: ${HYPANEL_COOKIE_SECURE:-false}
       HYPANEL_TRUSTED_PROXIES: ${HYPANEL_TRUSTED_PROXIES:-127.0.0.1}
+      HYPANEL_SFTP_ENABLED: "true"
+      HYPANEL_SFTP_PUBLIC_PORT: ${HYPANEL_SFTP_PUBLIC_PORT:-2223}
+      HYPANEL_TELEMETRY: ${HYPANEL_TELEMETRY:-true}
       TZ: Europe/Berlin
     volumes:
       - ${HYPANEL_HOST_DATA:-/mnt/user/appdata/hypanel}:/data

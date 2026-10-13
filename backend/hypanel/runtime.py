@@ -13,6 +13,7 @@ HOST_DATA = os.getenv("HYPANEL_HOST_DATA", "/mnt/user/appdata/hypanel").rstrip("
 INSTANCE = os.getenv("HYPANEL_INSTANCE", "default")
 LOCKS = {}
 LOCKS_LOCK = threading.Lock()
+EXTERNAL_WRITES = {}
 
 
 def lock(sid):
@@ -77,6 +78,8 @@ def state(server, metrics=False):
 def launch(server, install=False):
     sid = server["id"]
     with lock(sid):
+        if EXTERNAL_WRITES.get(sid, 0):
+            raise HTTPException(409, 'Zuerst laufende SFTP-Uploads abschließen')
         if active(sid):
             raise HTTPException(409, "Server oder Installation läuft bereits")
         if not install and not state(server)["installed"]:
@@ -88,6 +91,7 @@ def launch(server, install=False):
         directory.mkdir(parents=True, exist_ok=True)
         owned_tree(directory)
         env = {"HYPANEL_MODE": "install" if install else "runner", "SERVER_MEMORY_MB": str(server["memory_mb"]),
+               "SERVER_CPUS": str(server["cpus"]), "HYPANEL_TELEMETRY": os.getenv("HYPANEL_TELEMETRY", "true"),
                "SERVER_PORT": str(server["port"]), "PATCHLINE": server["patchline"], "PYTHONUNBUFFERED": "1"}
         c = client().containers.run(
             IMAGE, detach=True, name=f"hypanel-{INSTANCE}-{'install' if install else 'server'}-{sid}",

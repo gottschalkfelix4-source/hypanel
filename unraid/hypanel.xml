@@ -22,4 +22,7 @@
   <Config Name="Trusted Proxy" Target="HYPANEL_TRUSTED_PROXIES" Default="127.0.0.1" Mode="" Description="Reverse proxy IP or CIDR. Do not use * on an exposed LAN." Type="Variable" Display="advanced" Required="true" Mask="false">127.0.0.1</Config>
   <Config Name="Timezone" Target="TZ" Default="Europe/Berlin" Mode="" Description="Display and default host timezone." Type="Variable" Display="advanced" Required="true" Mask="false">Europe/Berlin</Config>
   <Config Name="Upload Limit GiB" Target="HYPANEL_UPLOAD_LIMIT_GB" Default="16" Mode="" Description="Maximum size of one file upload." Type="Variable" Display="advanced" Required="true" Mask="false">16</Config>
+<Config Name="SFTP Port" Target="2222" Default="2223" Mode="tcp" Description="SFTP-only; login with username+server-id and panel password." Type="Port" Display="always" Required="true" Mask="false">2223</Config>
+  <Config Name="SFTP Public Port" Target="HYPANEL_SFTP_PUBLIC_PORT" Default="2223" Mode="" Description="Host port shown in SFTP connection details." Type="Variable" Display="advanced" Required="true" Mask="false">2223</Config>
+  <Config Name="Hytale Telemetry" Target="HYPANEL_TELEMETRY" Default="true" Mode="" Description="Compile a local plugin against your server for actual TPS and player counts. No external network or port." Type="Variable" Display="advanced" Required="true" Mask="false">true</Config>
 </Container>

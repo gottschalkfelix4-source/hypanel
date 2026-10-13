@@ -2,6 +2,7 @@ import hashlib
 import os
 import secrets
 import time
+import json
 from collections import defaultdict, deque
 from urllib.parse import urlsplit
 
@@ -56,14 +57,28 @@ def admin(user):
         raise HTTPException(403, "Administratorrechte erforderlich")
 
 
-def access(user, sid, write=False, manage=False):
+RIGHTS = ['console.read', 'console.write', 'server.power', 'files.read', 'files.write', 'config.write',
+          'mods.write', 'backups.create', 'backups.restore', 'automation.write', 'access.write', 'settings.write', 'players.write']
+
+
+def rights(user, sid):
+    if user['role'] == 'admin':
+        return RIGHTS
+    row = store.query('SELECT permission FROM access WHERE user_id=? AND server_id=?', (user['id'], sid), one=True)
+    if not row:
+        return []
+    return store.setting('rights:' + sid + ':' + user['id'], RIGHTS if row['permission'] == 'operator' else ['console.read', 'files.read'])
+
+
+def access(user, sid, write=False, manage=False, right=None):
     server = store.query("SELECT * FROM servers WHERE id=?", (sid,), one=True)
     if not server:
         raise HTTPException(404, "Server nicht gefunden")
     if user["role"] == "admin":
         return server
     row = store.query("SELECT permission FROM access WHERE user_id=? AND server_id=?", (user["id"], sid), one=True)
-    if not row or manage or (write and row["permission"] != "operator"):
+    required = right or ('files.write' if write else None)
+    if not row or manage or (required and required not in rights(user, sid)):
         raise HTTPException(403, "Kein Zugriff auf diesen Server")
     return server
 

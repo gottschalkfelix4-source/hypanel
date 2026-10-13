@@ -1,0 +1,10 @@
+{
+  "Group": "HyPanel",
+  "Name": "Telemetry",
+  "Version": "0.2.0",
+  "Description": "Lokale Messwerte und Spielerliste für HyPanel",
+  "Main": "io.hypanel.HyPanelTelemetry",
+  "ServerVersion": "*",
+  "Dependencies": {"Hytale:Universe": "*"},
+  "IncludesAssetPack": false
+}

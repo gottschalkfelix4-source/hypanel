@@ -18,13 +18,15 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Respon
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from . import store, runtime, operations
+from . import store, runtime, operations, jobs
+from . import metrics as monitoring
+from .features import router as features_router
 from .files import root, safe_path, atomic_write, extract_zip, owned_tree, PROTECTED
-from .security import current_user, admin, access, audit, check_origin, hash_password, verify_password, throttle, digest
+from .security import current_user, admin, access, audit, check_origin, hash_password, verify_password, throttle, digest, rights, RIGHTS
 from .limits import UploadLimitMiddleware
 
 User = Annotated[dict, Depends(current_user)]
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 stop_event = threading.Event()
 SETUP_LOCK = threading.Lock()
 UPLOAD_LIMIT = int(os.getenv("HYPANEL_UPLOAD_LIMIT_GB", "16")) * 1024**3
@@ -33,6 +35,7 @@ UPLOAD_LIMIT = int(os.getenv("HYPANEL_UPLOAD_LIMIT_GB", "16")) * 1024**3
 @asynccontextmanager
 async def lifespan(app):
     store.init()
+    jobs.recover()
     if not store.query("SELECT id FROM users LIMIT 1"):
         key = store.DATA / "setup.key"
         if not key.exists():
@@ -41,6 +44,13 @@ async def lifespan(app):
     stop_event.clear()
     thread = threading.Thread(target=operations.scheduler, args=(stop_event,), daemon=True)
     thread.start()
+    metrics_thread = threading.Thread(target=monitoring.collector, args=(stop_event,), daemon=True)
+    metrics_thread.start()
+    sftp_thread = None
+    if os.getenv('HYPANEL_SFTP_ENABLED', 'true').lower() == 'true':
+        from . import sftp
+        sftp_thread = threading.Thread(target=sftp.listen, args=(stop_event,), daemon=True)
+        sftp_thread.start()
     for server in store.query("SELECT * FROM servers WHERE autostart=1"):
         try:
             if not runtime.active(server["id"]):
@@ -50,6 +60,9 @@ async def lifespan(app):
     yield
     stop_event.set()
     thread.join(timeout=2)
+    metrics_thread.join(timeout=2)
+    if sftp_thread:
+        sftp_thread.join(timeout=2)
 
 
 app = FastAPI(title="HyPanel", version=VERSION, lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -180,7 +193,11 @@ def server_state(server, user, metrics=False):
     result = runtime.state(server, metrics=metrics)
     permission = "admin" if user["role"] == "admin" else store.query(
         "SELECT permission FROM access WHERE server_id=? AND user_id=?", (server["id"], user["id"]), one=True)["permission"]
-    return dict(result, permission=permission)
+    data = monitoring.telemetry(server['id'], result['status'] == 'running')
+    last = store.query('SELECT * FROM metrics WHERE server_id=? ORDER BY at DESC LIMIT 1', (server['id'],), one=True)
+    if last and time.time() - last['at'] > 30:
+        last = None
+    return dict(result, permission=permission, rights=rights(user, server['id']), last_metric=last, ready=data['available'])
 
 
 def insert_server(body):
@@ -214,7 +231,9 @@ def get_server(sid: str, user: User):
 
 @app.put("/api/servers/{sid}")
 def edit_server(sid: str, body: ServerSpec, user: User):
-    access(user, sid, manage=True)
+    original = access(user, sid, right="settings.write")
+    if user["role"] != "admin" and any(getattr(body, key) != original[key] for key in ('port','memory_mb','cpus','patchline')):
+        raise HTTPException(403, "Ports, Ressourcen und Update-Kanal dürfen nur Administratoren ändern")
     with runtime.lock(sid):
         operations.require_stopped(sid)
         if store.query("SELECT id FROM servers WHERE port=? AND id!=?", (body.port, sid)):
@@ -272,7 +291,9 @@ def clone_server(sid: str, body: ServerSpec, user: User):
 
 @app.post("/api/servers/{sid}/power/{action}")
 def power(sid: str, action: Literal["start", "stop", "restart", "kill"], user: User):
-    server = access(user, sid, write=True)
+    if store.query("SELECT id FROM jobs WHERE server_id=? AND state IN ('queued','running')", (sid,)):
+        raise HTTPException(409, 'Zuerst den laufenden Auftrag abschließen oder abbrechen')
+    server = access(user, sid, right="server.power")
     with runtime.lock(sid):
         if action in {"stop", "restart", "kill"}:
             runtime.stop(sid, force=action == "kill")
@@ -300,7 +321,7 @@ class Command(BaseModel):
 
 @app.post("/api/servers/{sid}/command")
 def command(sid: str, body: Command, user: User):
-    access(user, sid, write=True)
+    access(user, sid, right="console.write")
     runtime.command(sid, body.command)
     # Command contents may contain passwords/tokens; only log the verb.
     audit(user, "console.command", sid, body.command.split()[0])
@@ -315,7 +336,7 @@ def clean_logs(value):
 
 @app.get("/api/servers/{sid}/logs")
 def logs(sid: str, user: User, install: bool = False, download: bool = False):
-    access(user, sid)
+    access(user, sid, right="console.read")
     if install:
         admin(user)
     content = clean_logs(runtime.logs(sid, install, tail="all" if download else 500))
@@ -326,7 +347,7 @@ def logs(sid: str, user: User, install: bool = False, download: bool = False):
 
 @app.get("/api/servers/{sid}/events")
 async def events(sid: str, request: Request, user: User):
-    access(user, sid)
+    access(user, sid, right="console.read")
     async def stream():
         previous = None
         for _ in range(1800):
@@ -334,7 +355,7 @@ async def events(sid: str, request: Request, user: User):
                 return
             try:
                 current_user(request)
-                access(user, sid)
+                access(user, sid, right="console.read")
                 value = await asyncio.to_thread(runtime.logs, sid, False, 300)
                 value = clean_logs(value)
                 if value != previous:
@@ -351,7 +372,7 @@ async def events(sid: str, request: Request, user: User):
 
 @app.get("/api/servers/{sid}/files")
 def files(sid: str, user: User, path: str = "Server"):
-    access(user, sid)
+    access(user, sid, right="files.read")
     directory = safe_path(root(sid), path)
     if not directory.is_dir():
         raise HTTPException(404, "Verzeichnis nicht gefunden")
@@ -367,7 +388,7 @@ def files(sid: str, user: User, path: str = "Server"):
 
 @app.get("/api/servers/{sid}/files/content")
 def file_content(sid: str, user: User, path: str):
-    access(user, sid)
+    access(user, sid, right="files.read")
     p = safe_path(root(sid), path)
     if not p.is_file():
         raise HTTPException(404, "Datei nicht gefunden")
@@ -381,7 +402,7 @@ def file_content(sid: str, user: User, path: str):
 
 @app.get("/api/servers/{sid}/files/download")
 def file_download(sid: str, user: User, path: str):
-    access(user, sid)
+    access(user, sid, right="files.read")
     p = safe_path(root(sid), path)
     if not p.is_file():
         raise HTTPException(404, "Datei nicht gefunden")
@@ -395,7 +416,7 @@ class FileEdit(BaseModel):
 
 @app.put("/api/servers/{sid}/files/content")
 def edit_file(sid: str, body: FileEdit, user: User):
-    access(user, sid, write=True)
+    access(user, sid, right="files.write")
     with runtime.lock(sid):
         operations.require_stopped(sid)
         p = safe_path(root(sid), body.path)
@@ -431,7 +452,7 @@ def save_upload(upload, destination):
 
 @app.post("/api/servers/{sid}/files/upload")
 def upload_file(sid: str, user: User, file: UploadFile = File(), path: str = Form("Server/mods"), overwrite: bool = Form(False)):
-    access(user, sid, write=True)
+    access(user, sid, right="files.write")
     with runtime.lock(sid):
         operations.require_stopped(sid)
         if not file.filename or "/" in file.filename or "\\" in file.filename:
@@ -451,7 +472,7 @@ class PathAction(BaseModel):
 
 @app.post("/api/servers/{sid}/files/{action}")
 def path_action(sid: str, action: Literal["mkdir", "rename", "delete"], body: PathAction, user: User):
-    access(user, sid, write=True)
+    access(user, sid, right="files.write")
     with runtime.lock(sid):
         operations.require_stopped(sid)
         p = safe_path(root(sid), body.path)
@@ -552,7 +573,7 @@ def backups(sid: str, user: User):
 
 @app.post("/api/servers/{sid}/backups")
 def create_backup(sid: str, user: User, full: bool = False):
-    return operations.backup(access(user, sid, write=True), user, full=full)
+    return operations.backup(access(user, sid, right="backups.create"), user, full=full)
 
 
 @app.get("/api/servers/{sid}/backups/{name}")
@@ -566,7 +587,7 @@ def download_backup(sid: str, name: str, user: User):
 
 @app.post("/api/servers/{sid}/backups/{name}/restore")
 def restore_backup(sid: str, name: str, user: User):
-    operations.restore(access(user, sid, manage=True), name, user)
+    operations.restore(access(user, sid, right="backups.restore"), name, user)
     return {"ok": True}
 
 
@@ -598,7 +619,7 @@ def schedules(sid: str, user: User):
 
 @app.post("/api/servers/{sid}/schedules", status_code=201)
 def create_schedule(sid: str, body: Schedule, user: User):
-    access(user, sid, manage=True)
+    access(user, sid, right="automation.write")
     if body.action == "command" and (not body.command or any(c in body.command for c in "\r\n\x00")):
         raise HTTPException(400, "Einzelnen Konsolenbefehl angeben")
     next_at = operations.next_run(body.cron, body.timezone)
@@ -611,7 +632,7 @@ def create_schedule(sid: str, body: Schedule, user: User):
 
 @app.delete("/api/servers/{sid}/schedules/{jid}")
 def delete_schedule(sid: str, jid: str, user: User):
-    access(user, sid, manage=True)
+    access(user, sid, right="automation.write")
     store.execute("DELETE FROM schedules WHERE id=? AND server_id=?", (jid, sid))
     audit(user, "schedule.delete", sid, jid)
     return {"ok": True}
@@ -664,32 +685,43 @@ def update_user(uid: str, body: UserUpdate, user: User):
 
 class Permission(BaseModel):
     user_id: str
-    permission: Literal["viewer", "operator", "none"]
+    permission: Literal["viewer", "operator", "none", "custom"]
+    rights: list[str] | None = None
 
 
 @app.get("/api/servers/{sid}/access")
 def server_access(sid: str, user: User):
-    access(user, sid, manage=True)
-    return store.query("SELECT a.*,u.username FROM access a JOIN users u ON a.user_id=u.id WHERE server_id=?", (sid,))
+    access(user, sid, right="access.write")
+    rows = store.query("SELECT a.*,u.username FROM access a JOIN users u ON a.user_id=u.id WHERE server_id=?", (sid,))
+    return [dict(row, rights=rights({'id':row['user_id'], 'role':'member'}, sid)) for row in rows]
 
 
 @app.put("/api/servers/{sid}/access")
 def assign_access(sid: str, body: Permission, user: User):
-    access(user, sid, manage=True)
+    access(user, sid, right="access.write")
+    granted = body.rights if body.rights is not None else RIGHTS if body.permission == "operator" else ["console.read", "files.read"]
+    if user["role"] != "admin" and (body.user_id == user["id"] or not set(granted).issubset(set(rights(user, sid)))):
+        raise HTTPException(403, "Nur eigene Rechte an andere Mitglieder weitergeben")
     if not store.query("SELECT id FROM users WHERE id=?", (body.user_id,)):
         raise HTTPException(404, "Benutzer nicht gefunden")
     if body.permission == "none":
         store.execute("DELETE FROM access WHERE server_id=? AND user_id=?", (sid, body.user_id))
+        store.execute("DELETE FROM settings WHERE key=?", ('rights:' + sid + ':' + body.user_id,))
     else:
+        if body.rights is not None and any(value not in RIGHTS for value in body.rights):
+            raise HTTPException(400, 'Unbekannte Serverberechtigung')
         store.execute("INSERT OR REPLACE INTO access VALUES(?,?,?)", (sid, body.user_id, body.permission))
+        store.set_setting('rights:' + sid + ':' + body.user_id, body.rights if body.rights is not None else RIGHTS if body.permission == 'operator' else ['console.read', 'files.read'])
     audit(user, "access.edit", sid, body.user_id + ":" + body.permission)
     return {"ok": True}
 
 
 @app.get("/api/audit")
-def audit_log(user: User):
+def audit_log(user: User, q: str = "", server_id: str = "", action: str = ""):
     admin(user)
-    return store.query("SELECT * FROM audit ORDER BY id DESC LIMIT 500")
+    return store.query("SELECT * FROM audit WHERE (?='' OR server_id=?) AND (?='' OR action=?) "
+                       "AND (?='' OR user LIKE ? OR detail LIKE ? OR action LIKE ?) ORDER BY id DESC LIMIT 500",
+                       (server_id, server_id, action, action, q, '%' + q[:100] + '%', '%' + q[:100] + '%', '%' + q[:100] + '%'))
 
 
 @app.get("/api/system")
@@ -703,11 +735,12 @@ def system(user: User):
         docker_state = {"connected": False}
     disk = shutil.disk_usage(store.DATA)
     return {"version": VERSION, "docker": docker_state, "runner_image": runtime.IMAGE, "host_data": runtime.HOST_DATA,
-            "disk": {"total": disk.total, "free": disk.free}, "backup_retention": store.setting("backup_retention", 10),
+            "disk": {"total": disk.total, "free": disk.free}, "backup_retention": store.setting("backup_retention", 10), "backup_global_quota_gb": store.setting("backup_global_quota_gb", 100),
             "public_url": os.getenv("HYPANEL_PUBLIC_URL", ""), "upload_limit_bytes": UPLOAD_LIMIT}
 
 
 class Settings(BaseModel):
+    backup_global_quota_gb: float = Field(default=100, ge=1, le=100000)
     backup_retention: int = Field(ge=2, le=365, default=10)
 
 
@@ -715,6 +748,7 @@ class Settings(BaseModel):
 def update_settings(body: Settings, user: User):
     admin(user)
     store.set_setting("backup_retention", body.backup_retention)
+    store.set_setting("backup_global_quota_gb", body.backup_global_quota_gb)
     audit(user, "settings.edit")
     return {"ok": True}
 
@@ -750,7 +784,7 @@ def delete_token(tid: str, user: User):
 
 @app.put("/api/servers/{sid}/schedules/{jid}")
 def edit_schedule(sid: str, jid: str, body: Schedule, user: User):
-    access(user, sid, manage=True)
+    access(user, sid, right="automation.write")
     if not store.query("SELECT id FROM schedules WHERE id=? AND server_id=?", (jid, sid)):
         raise HTTPException(404, "Zeitplan nicht gefunden")
     if body.action == "command" and (not body.command or any(c in body.command for c in "\r\n\x00")):
@@ -764,7 +798,7 @@ def edit_schedule(sid: str, jid: str, body: Schedule, user: User):
 
 @app.post("/api/servers/{sid}/schedules/{jid}/run")
 def run_schedule(sid: str, jid: str, user: User):
-    access(user, sid, manage=True)
+    access(user, sid, right="automation.write")
     job = store.query("SELECT * FROM schedules WHERE id=? AND server_id=?", (jid, sid), one=True)
     if not job:
         raise HTTPException(404, "Zeitplan nicht gefunden")
@@ -774,6 +808,7 @@ def run_schedule(sid: str, jid: str, user: User):
     return {"ok": True}
 
 
+app.include_router(features_router)
 FRONTEND = Path(os.getenv("HYPANEL_FRONTEND", str(Path(__file__).resolve().parents[2] / "frontend")))
 if FRONTEND.exists():
     @app.get("/docs", include_in_schema=False)

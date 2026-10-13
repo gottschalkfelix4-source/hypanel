@@ -1,5 +1,15 @@
 # HyPanel
 
+Die Oberfläche und Verwaltung orientieren sich an [MCPanel](https://github.com/gottschalkfelix4-source/mcpanel).
+Version **0.2.0** ergänzt Serverkarten mit Steinrahmen, Messwertverläufe und echte Hytale-TPS/Spielerdaten,
+13 Serverrechte, einen CurseForge-Mod-Browser, Hintergrundaufträge, Backup-Quoten, SFTP und Panel-Sicherungen.
+
+[Funktionsabgleich, Einrichtung und Hytale-Unterschiede](docs/mcpanel-vergleich.md)
+
+SFTP ist im Unraid-Template auf **2223/TCP** vorgesehen. Für den Mod-Browser einen eigenen
+CurseForge-API-Schlüssel unter **Panel** speichern. Das lokale Telemetrie-Plugin wird beim
+Serverstart gegen deine Hytale-Version kompiliert; es öffnet keinen Netzwerkport.
+
 Ein selbst gehostetes Hytale-Serverpanel für Docker und Unraid. Jeder Spielserver läuft in einem eigenen Container mit eigenem UDP-Port, persistenten Daten und begrenzten CPU-/RAM-Ressourcen. Die deutschsprachige Weboberfläche benötigt keinen separaten Webserver oder zusätzliche Datenbank.
 
 ## Funktionen

@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import HTTPException
 from .store import DATA
 
-PROTECTED = {"auth.enc", "auth.key", ".machine-id", ".hytale-downloader-credentials.json", ".hytale-server-credentials.json"}
+PROTECTED = {"auth.enc", "auth.key", ".machine-id", ".hypanel-telemetry.json", ".hytale-downloader-credentials.json", ".hytale-server-credentials.json"}
 MAX_ARCHIVE_BYTES = 32 * 1024**3
 
 
@@ -78,16 +78,34 @@ def extract_zip(archive, destination):
                 os.chmod(target, 0o600 if target.name in PROTECTED else 0o644)
 
 
-def create_zip(source, output, binaries=False):
+def zip_entries(source, binaries=False):
+    for p in source.rglob("*"):
+        rel = p.relative_to(source)
+        if p.is_symlink() or any(part in PROTECTED or part.startswith(".hytale") for part in rel.parts):
+            continue
+        if any(part in {"logs", ".cache", "updater", "backups"} for part in rel.parts):
+            continue
+        if not binaries and p.name in {"Assets.zip", "HytaleServer.jar", "HytaleServer.aot"}:
+            continue
+        yield p, rel
+
+
+def create_zip(source, output, binaries=False, progress=None):
+    entries = list(zip_entries(source, binaries))
+    total = sum(p.stat().st_size for p, _ in entries if p.is_file())
+    done = 0
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as z:
-        for p in source.rglob("*"):
-            rel = p.relative_to(source)
-            if p.is_symlink():
+        for p, rel in entries:
+            if p.is_dir():
+                z.write(p, rel.as_posix())
                 continue
-            if any(part in PROTECTED or part.startswith(".hytale") for part in rel.parts):
-                continue
-            if any(part in {"logs", ".cache", "updater", "backups"} for part in rel.parts):
-                continue
-            if not binaries and p.name in {"Assets.zip", "HytaleServer.jar", "HytaleServer.aot"}:
-                continue
-            z.write(p, rel.as_posix())
+            info = zipfile.ZipInfo.from_file(p, rel.as_posix())
+            info.compress_type = zipfile.ZIP_DEFLATED
+            with p.open("rb") as src, z.open(info, "w", force_zip64=True) as dst:
+                while chunk := src.read(1024 * 1024):
+                    dst.write(chunk)
+                    done += len(chunk)
+                    if progress:
+                        progress(done, total)
+    if progress:
+        progress(total, total)

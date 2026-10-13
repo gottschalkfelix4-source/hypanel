@@ -4,16 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hypanel"
-version = "0.1.0"
+version = "0.2.0"
 description = "Self-hosted Hytale server management for Docker and Unraid"
 requires-python = ">=3.12"
-dependencies = ["fastapi>=0.115,<1", "uvicorn[standard]>=0.34,<1", "docker>=7.1,<8", "python-multipart>=0.0.20,<1", "argon2-cffi>=23.1,<26", "croniter>=6,<7", "psutil>=6,<8", "tzdata>=2025.1"]
+dependencies = ["fastapi>=0.115,<1", "uvicorn[standard]>=0.34,<1", "docker>=7.1,<8", "python-multipart>=0.0.20,<1", "argon2-cffi>=23.1,<26", "croniter>=6,<7", "psutil>=6,<8", "tzdata>=2025.1", "paramiko>=4,<5"]
 
 [project.optional-dependencies]
 test = ["pytest>=8,<10", "httpx>=0.28,<1"]
 
 [tool.setuptools.packages.find]
 where = ["backend"]
+
+[tool.setuptools.package-data]
+hypanel = ["telemetry/*.java", "telemetry/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

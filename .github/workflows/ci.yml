@@ -17,6 +17,7 @@ jobs:
       - run: pip install -e '.[test]'
       - run: pytest -q
       - run: node --check frontend/app.js
+      - run: node --check frontend/charts.js
       - run: python -c "import xml.etree.ElementTree as E; E.parse('unraid/hypanel.xml')"
   image:
     needs: test
@@ -44,6 +45,10 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          outputs: type=image,oci-mediatypes=false
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
