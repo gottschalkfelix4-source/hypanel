@@ -12,6 +12,19 @@ let charts=[], overviewTimer, jobTimer, commandHistory=[], historyIndex=0;
 let panelVersion = '—';
 let user, servers = [], selected, section = 'servers', tab = 'console', filePath = 'Server', source, metricsTimer, noticeTimer;
 
+function busy(button, active) {
+  if (button?.tagName !== 'BUTTON') return;
+  button.disabled = active;
+  if (active) button.setAttribute('aria-busy', 'true');
+  else button.removeAttribute('aria-busy');
+}
+function reveal(node) {
+  if (!node) return;
+  node.classList.remove('view-enter');
+  void node.offsetWidth;
+  node.classList.add('view-enter');
+}
+
 function notify(message, error = false) {
   const node = $('#notice'); node.textContent = message; node.className = error ? 'error' : ''; node.hidden = false;
   clearTimeout(noticeTimer); noticeTimer = setTimeout(() => node.hidden = true, error ? 10000 : 4500);
@@ -32,9 +45,9 @@ function bind(selector, event, fn, root = document) {
   $$(selector, root).forEach(node => node.addEventListener(event, async e => {
     if (event === 'submit') e.preventDefault();
     const button = event === 'submit' ? $('button[type=submit]', node) : node;
-    if (button?.tagName === 'BUTTON') button.disabled = true;
+    busy(button, true);
     try { await fn(e, node); } catch (error) { notify(error.message, true); }
-    finally { if (button?.tagName === 'BUTTON') button.disabled = false; applyRights(); }
+    finally { busy(button, false); applyRights(); }
   }));
 }
 function formValues(form) { return Object.fromEntries(new FormData(form)); }
@@ -44,10 +57,10 @@ function modal(title, content, submit, label = 'Speichern') {
   $('#dialog-content').innerHTML = `<h2>${escape(title)}</h2><form id="modal-form">${content}<div class="error" id="modal-error" hidden></div><div class="form-actions"><button type="button" id="cancel">Abbrechen</button><button type="submit" class="primary">${escape(label)}</button></div></form>`;
   $('#cancel').onclick = () => dialog.close();
   $('#modal-form').onsubmit = async e => {
-    e.preventDefault(); const b = $('button[type=submit]', e.target); b.disabled = true;
+    e.preventDefault(); const b = $('button[type=submit]', e.target); busy(b, true);
     try { const close = await submit(formValues(e.target), e.target); if (close !== false) dialog.close(); }
     catch (error) { $('#modal-error').textContent = error.message; $('#modal-error').hidden = false; }
-    finally { b.disabled = false; }
+    finally { busy(b, false); }
   };
   dialog.showModal();
 }
@@ -64,20 +77,30 @@ async function auth() {
   const setup = await api('/setup');
   $('#app').innerHTML = `<main class="auth-page"><div class="auth-box">${brand()}<h1>${setup.required ? 'Panel einrichten' : 'Anmelden'}</h1><p class="muted">Deine Hytale-Server auf Docker und Unraid.</p><form id="auth-form">${setup.required ? '<label>Einrichtungsschlüssel<input name="setup_key" type="password" required autocomplete="off"></label><p class="hint">Der einmalige Schlüssel liegt im Container unter <code>/data/setup.key</code>. Er schützt die erste Einrichtung.</p>' : ''}<label>Benutzername<input name="username" required minlength="3" maxlength="64" autocomplete="username"></label><label>Passwort<input name="password" type="password" required ${setup.required ? 'minlength="12"' : ''} autocomplete="${setup.required ? 'new-password' : 'current-password'}"></label><div id="auth-error" class="error" hidden></div><button type="submit" class="primary">${setup.required ? 'Administratorkonto erstellen' : 'Anmelden'}</button></form></div></main>`;
   $('#auth-form').onsubmit = async e => {
-    e.preventDefault(); const b = $('button', e.target); b.disabled = true;
+    e.preventDefault(); const b = $('button', e.target); busy(b, true);
     try {
       const values = formValues(e.target);
       if (setup.required) await api('/setup', 'POST', values);
       user = await api('/login', 'POST', {username:values.username,password:values.password});
       await navigate('servers');
     } catch (error) { $('#auth-error').textContent = error.message; $('#auth-error').hidden = false; }
-    finally { b.disabled = false; }
+    finally { busy(b, false); }
   };
 }
 const svgIcon=(path)=>`<span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24">${path}</svg></span>`;
 const icons={servers:svgIcon('<rect x="3" y="3" width="18" height="7"/><rect x="3" y="14" width="18" height="7"/><path d="M6 6h2m-2 11h2"/>'),users:svgIcon('<circle cx="9" cy="7" r="4"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M17 3a4 4 0 0 1 0 8m2 3a6 6 0 0 1 3 7"/>'),system:svgIcon('<path d="M12 3v4m0 10v4M3 12h4m10 0h4M5 5l3 3m8 8 3 3M5 19l3-3M16 8l3-3"/><circle cx="12" cy="12" r="5"/>'),jobs:svgIcon('<path d="M4 4h16v16H4zM8 8h8M8 12h8M8 16h5"/>')};
 function brand(){return '<div class="brand"><img src="/icon.svg" alt=""><div><strong>HyPanel</strong><small>Hytale Server Hosting</small></div></div>';}
 function shell() {
+  if ($('.shell')) {
+    $$('.site-header [data-nav]').forEach(button => {
+      const active = button.dataset.nav === section;
+      button.classList.toggle('active', active);
+      if (active) button.setAttribute('aria-current', 'page');
+      else button.removeAttribute('aria-current');
+    });
+    $('.account-menu').open = false;
+    return;
+  }
   const navigation={servers:'Server',...(user.role==='admin'?{users:'Benutzer',jobs:'Aufträge',audit:'Aktivitäten',system:'Panel'}:{})};
   $('#app').innerHTML=`<div class="shell"><header class="site-header"><div class="grass-strip"></div><div class="header-inner">${brand()}<nav aria-label="Hauptnavigation">${Object.entries(navigation).map(([key,label])=>`<button data-nav="${key}" class="${section===key?'active':''}">${icons[key]||icons.jobs}${label}</button>`).join('')}</nav><details class="account-menu"><summary aria-label="Benutzermenü"><span class="avatar">${escape(user.username[0].toUpperCase())}</span><span>${escape(user.username)}</span>⌄</summary><div class="account-dropdown"><strong>${escape(user.username)}</strong><p class="small muted">${user.role==='admin'?'Administrator':'Mitglied'}</p><button data-nav="account">Mein Konto</button><button id="logout">Abmelden</button></div></details></div></header><main class="content" id="content"></main><footer class="site-footer">HyPanel · selbstgehostet · Hytale auf Docker & Unraid · ${escape(panelVersion)}</footer></div>`;
   bind('[data-nav]','click',(_,n)=>navigate(n.dataset.nav));
@@ -85,15 +108,17 @@ function shell() {
 }
 async function navigate(next) {
   disconnect(); section = next; selected = null; shell();
+  $('#content').innerHTML = '<div class="loading" role="status">Wird geladen …</div>';
   const render = {servers:renderServers,users:renderUsers,audit:renderAudit,system:renderSystem,jobs:renderJobs,account:renderAccount}[next];
   await render();
+  reveal($('#content'));
 }
 function bar(percent,cls=''){return `<progress class="pixel-track ${cls}" max="100" value="${Math.min(100,Math.max(0,percent||0))}"></progress>`;}
 function serverCard(s){const sample=s.last_metric;const cpu=sample?.cpu;const ram=sample?.memory;return `<article class="server-card" data-card="${s.id}"><div class="card-head"><img src="/icon.svg" alt=""><div class="card-title"><h2><button class="name-button" data-open="${s.id}">${escape(s.name)}</button></h2><p class="muted">Hytale · ${s.patchline==='release'?'Release':'Pre-Release'}${s.installed?'':' · Installation ausstehend'}</p><span class="card-address">${escape(location.hostname)}:${s.port} / UDP</span></div>${status(s.status==='running'&&!s.ready?'starting':s.status)}</div><div class="card-body"><div><div class="resource-line"><span>CPU</span><strong>${cpu==null?'—':cpu.toFixed(1)+' %'} · ${s.cpus} Kerne</strong></div>${bar(cpu,'cpu')}</div><div><div class="resource-line"><span>Arbeitsspeicher</span><strong>${ram==null?'—':bytes(ram*1024**2)} / ${bytes(s.memory_mb*1024**2)}</strong></div>${bar(ram/(s.memory_mb||1)*100)}</div><div class="resource-line"><span>Spieler</span><strong>${sample?.players??'Nicht verfügbar'}</strong><span>TPS</span><strong>${sample?.tps==null?'—':sample.tps.toFixed(1)}</strong></div></div><div class="card-foot"><div class="actions">${(s.rights||[]).includes('server.power')?`<button data-card-power="start" data-sid="${s.id}" ${s.status==='running'?'disabled':''}>▶ Start</button><button data-card-power="stop" data-sid="${s.id}" ${s.status!=='running'?'disabled':''}>■ Stop</button>`:''}</div><button data-open="${s.id}">Öffnen →</button></div></article>`;}
 async function renderServers() {
   servers=await api('/servers');
   $('#content').innerHTML=`<div class="titlebar"><div><h1>Deine Server</h1><p class="muted">${servers.length} Server · ${servers.filter(s=>s.status==='running').length} Container aktiv</p></div><div class="actions"><button id="refresh">Aktualisieren</button>${user.role==='admin'?'<button id="create-server" class="primary">+ Server erstellen</button>':''}</div></div>${user.role==='admin'?'<div id="host-stats"></div>':''}<div class="server-grid">${servers.map(serverCard).join('')}</div>${servers.length?'':'<div class="empty">Noch keine Server. Erstelle deinen ersten Hytale-Server.</div>'}`;
-  if(user.role==='admin'){const hostNode=$('#host-stats');api('/host').then(h=>{if(!hostNode.isConnected)return;hostNode.innerHTML=`<div class="stat-grid"><div class="stat-card"><span class="caption">HOST CPU</span><div class="value">${h.cpu_percent.toFixed(1)} %</div>${bar(h.cpu_percent,'cpu')}</div><div class="stat-card"><span class="caption">HOST RAM</span><div class="value">${bytes(h.memory_used)}</div><span class="caption">von ${bytes(h.memory_total)}</span></div><div class="stat-card"><span class="caption">HOST LAUFZEIT</span><div class="value">${Math.floor(h.uptime/86400)} Tage</div><span class="caption">${Math.floor(h.uptime/3600)%24} Stunden</span></div><div class="stat-card"><span class="caption">SPIELSERVER</span><div class="value">${servers.filter(s=>s.ready).length} bereit</div><span class="caption">${servers.length} eingerichtet</span></div></div>`;}).catch(()=>{if(hostNode.isConnected)hostNode.textContent='Host-Messwerte derzeit nicht verfügbar.';});}
+  if(user.role==='admin'){const hostNode=$('#host-stats');api('/host').then(h=>{if(!hostNode.isConnected)return;hostNode.innerHTML=`<div class="stat-grid"><div class="stat-card"><span class="caption">Host CPU</span><div class="value">${h.cpu_percent.toFixed(1)} %</div>${bar(h.cpu_percent,'cpu')}</div><div class="stat-card"><span class="caption">Host RAM</span><div class="value">${bytes(h.memory_used)}</div><span class="caption">von ${bytes(h.memory_total)}</span></div><div class="stat-card"><span class="caption">Host-Laufzeit</span><div class="value">${Math.floor(h.uptime/86400)} Tage</div><span class="caption">${Math.floor(h.uptime/3600)%24} Stunden</span></div><div class="stat-card"><span class="caption">Spielserver</span><div class="value">${servers.filter(s=>s.ready).length} bereit</div><span class="caption">${servers.length} eingerichtet</span></div></div>`;}).catch(()=>{if(hostNode.isConnected)hostNode.textContent='Host-Messwerte derzeit nicht verfügbar.';});}
   bind('#refresh','click',renderServers);bind('#create-server','click',()=>serverForm());bind('[data-open]','click',(_,n)=>openServer(n.dataset.open));
   bind('[data-card-power]','click',async(_,n)=>{await api(`/servers/${n.dataset.sid}/power/${n.dataset.cardPower}`,'POST');await renderServers();});
   clearInterval(metricsTimer);metricsTimer=setInterval(async()=>{if(section!=='servers'||selected)return;try{const list=await api('/servers');for(const s of list){const card=$(`[data-card="${s.id}"]`);if(card){const temp=document.createElement('template');temp.innerHTML=serverCard(s);card.replaceWith(temp.content.firstElementChild);}}bind('[data-open]','click',(_,n)=>openServer(n.dataset.open));bind('[data-card-power]','click',async(_,n)=>{await api(`/servers/${n.dataset.sid}/power/${n.dataset.cardPower}`,'POST');await renderServers();});}catch{}},10000);
@@ -123,12 +148,20 @@ function updateMetrics() {
   $('#server-meta').innerHTML = `${status(selected.status==='running'&&!selected.ready?'starting':selected.status)}<span>UDP <strong>${escape(location.hostname)}:${selected.port}</strong></span><span>RAM <strong>${bytes(selected.memory_bytes)} / ${bytes(selected.memory_mb*1024**2)}</strong></span><span>CPU <strong>${(selected.cpu_percent/selected.cpus).toFixed(1)}% / ${selected.cpus} Kerne</strong></span>${selected.exit_code?`<span>Exit-Code ${selected.exit_code}</span>`:''}`;
 }
 async function renderServer() {
+  const previousTabs = $('.tabs');
+  const scrollLeft = previousTabs?.scrollLeft || 0;
+  const focusedTab = document.activeElement?.dataset.tab;
   authCleanup();
   source?.close(); source = null;
   clearInterval(overviewTimer);charts.forEach(c=>c.destroy());charts=[];
   const tabs = {overview:'Übersicht',hytale:'Hytale-Account',console:'Konsole',files:'Dateien',config:'Konfiguration',mods:'Mods / Plugins',catalog:'Mod-Browser',worlds:'Welten',players:'Spieler',backups:'Backups',schedules:'Zeitpläne',access:'Zugriff',settings:'Einstellungen'};
   $('#content').innerHTML = `<button id="back" class="name-button">← Alle Server</button><div class="titlebar spaced"><div><h1>${escape(selected.name)}</h1><div class="server-meta" id="server-meta"></div></div><div class="actions"><button data-power="start" class="primary">Starten</button><button data-power="restart">Neustart</button><button data-power="stop">Stoppen</button><button data-power="kill" class="danger">Erzwingen</button></div></div><nav class="tabs" aria-label="Serverbereiche">${Object.entries(tabs).map(([key,label])=>`<button data-tab="${key}" class="${tab===key?'active':''}">${label}</button>`).join('')}</nav><div id="tab-content"></div>`;
   updateMetrics();
+  $('.tabs').scrollLeft = scrollLeft;
+  $$('[data-tab]').forEach(button => {
+    if (button.dataset.tab === tab) button.setAttribute('aria-current', 'page');
+    if (button.dataset.tab === focusedTab) button.focus({preventScroll:true});
+  });
   bind('#back','click',()=>navigate('servers'));
   bind('[data-power]','click',async(_,n)=>{
     const action=async()=>{selected=await api(serverUrl(`/power/${n.dataset.power}`),'POST'); updateMetrics(); notify('Serveraktion ausgeführt');};
@@ -137,6 +170,7 @@ async function renderServer() {
   bind('[data-tab]','click',async(_,n)=>{tab=n.dataset.tab; await renderServer();});
   await ({overview:renderOverview,hytale:renderHytaleAuth,catalog:renderCatalog,access:renderAccess,console:renderConsole,files:renderFiles,config:renderConfig,mods:renderMods,worlds:renderWorlds,players:renderPlayers,backups:renderBackups,schedules:renderSchedules,settings:renderServerSettings}[tab])();
   applyRights();
+  reveal($('#tab-content'));
 }
 function applyRights(){
   if(!selected||!user)return;
@@ -164,7 +198,7 @@ async function sendCommand(command) { await api(serverUrl('/command'),'POST',{co
 async function editText(path, title=path) {
   let content=''; try{content=(await api(serverUrl('/files/content?path='+enc(path)))).content;}catch(e){if(!e.message.includes('nicht gefunden'))throw e;}
   $('#tab-content').innerHTML = `<h2>${escape(title)}</h2><p class="hint">Der Server muss zum Speichern gestoppt sein. JSON wird vor dem Schreiben geprüft.</p><form id="editor"><label>Dateiinhalt<textarea name="content" spellcheck="false">${escape(content||'{}')}</textarea></label><div class="editor-actions"><button type="submit" class="primary">Speichern</button><button type="button" id="editor-back">Zurück</button><a href="/api${serverUrl('/files/download?path='+enc(path))}">Herunterladen</a></div></form>`;
-  bind('#editor','submit',async(e,n)=>{await api(serverUrl('/files/content'),'PUT',{path,...formValues(n)});notify('Datei gespeichert');});
+  bind('#editor','submit',async(e,n)=>{const back=$('#editor-back',n);back.disabled=true;try{await api(serverUrl('/files/content'),'PUT',{path,...formValues(n)});notify('Datei gespeichert');}finally{back.disabled=false;}});
   bind('#editor-back','click',renderServer);
 }
 async function renderFiles() {
@@ -296,7 +330,7 @@ async function renderOverview(){
     const [data,history]=await Promise.all([api(`/servers/${sid}/overview`),api(`/servers/${sid}/metrics/history?hours=`+$('#history-hours').value)]);
     if(selected?.id!==sid||tab!=='overview')return;
     const t=data.telemetry;const cpu=selected.cpu_percent/selected.cpus,ram=selected.memory_bytes;
-    $('#overview-stats').innerHTML=stat('CPU',cpu.toFixed(1)+' %',selected.cpus+' zugewiesene Kerne',cpu,'cpu')+stat('ARBEITSSPEICHER',bytes(ram),'von '+bytes(selected.memory_mb*1024**2),ram/(selected.memory_mb*1024**2)*100)+stat('TPS',t.tps===null?'—':t.tps.toFixed(1),t.available?'Welt-Ticks / Sekunde':'Telemetrie beim nächsten Serverstart')+stat('SPIELER',t.available?t.players.length:'—',t.available?'Live aus Hytale':'Nicht verfügbar');
+    $('#overview-stats').innerHTML=stat('CPU',cpu.toFixed(1)+' %',selected.cpus+' zugewiesene Kerne',cpu,'cpu')+stat('Arbeitsspeicher',bytes(ram),'von '+bytes(selected.memory_mb*1024**2),ram/(selected.memory_mb*1024**2)*100)+stat('TPS',t.tps===null?'—':t.tps.toFixed(1),t.available?'Welt-Ticks / Sekunde':'Telemetrie beim nächsten Serverstart')+stat('Spieler',t.available?t.players.length:'—',t.available?'Live aus Hytale':'Nicht verfügbar');
     charts.forEach(c=>c.set(history));
     $('#overview-players').innerHTML=t.available?table(['Name','UUID'],t.players.map(p=>`<tr><td>${escape(p.name)}</td><td class="small">${escape(p.uuid)}</td></tr>`),'Keine Spieler online.'):'<p class="muted">Noch keine frischen Hytale-Messwerte.</p>';
     $('#overview-jobs').innerHTML=jobTable(data.jobs,false);
