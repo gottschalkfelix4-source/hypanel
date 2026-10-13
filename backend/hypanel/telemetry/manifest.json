@@ -1,7 +1,7 @@
 {
   "Group": "HyPanel",
   "Name": "Telemetry",
-  "Version": "0.2.0",
+  "Version": "0.3.0",
   "Description": "Lokale Messwerte und Spielerliste für HyPanel",
   "Main": "io.hypanel.HyPanelTelemetry",
   "ServerVersion": "*",

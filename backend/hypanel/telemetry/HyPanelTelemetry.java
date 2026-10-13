@@ -4,6 +4,8 @@ import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
+import com.hypixel.hytale.server.core.HytaleServer;
+import com.hypixel.hytale.server.core.auth.ServerAuthManager;
 import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.*;
@@ -23,6 +25,7 @@ public final class HyPanelTelemetry extends JavaPlugin {
     @Override protected void shutdown() {
         if (executor != null) executor.shutdownNow();
         try { Files.deleteIfExists(Path.of(".hypanel-telemetry.json")); } catch (Exception ignored) {}
+        try { Files.deleteIfExists(Path.of(".hypanel-auth.json")); } catch (Exception ignored) {}
     }
     private static String quote(String value) {
         StringBuilder out = new StringBuilder("\"");
@@ -35,6 +38,10 @@ public final class HyPanelTelemetry extends JavaPlugin {
     }
     private void sample() {
         try {
+            try { sampleAuth(); } catch (Exception ignored) {
+                // Veralteter Auth-Status verfällt, Spielmesswerte bleiben unabhängig.
+            }
+            if ("false".equalsIgnoreCase(System.getenv("HYPANEL_TELEMETRY"))) return;
             Universe universe = Universe.get();
             if (universe == null) return;
             long now = System.nanoTime();
@@ -65,5 +72,27 @@ public final class HyPanelTelemetry extends JavaPlugin {
             // A stale sample expires in the panel. Never fabricate measurements.
             System.err.println("[HyPanel] Telemetrie konnte nicht aktualisiert werden: " + error.getClass().getSimpleName());
         }
+    }
+
+    private void sampleAuth() throws Exception {
+        var auth = ServerAuthManager.getInstance();
+        var profile = auth.getSelectedProfile();
+        var pending = auth.getPendingProfiles();
+        List<String> profiles = new ArrayList<>();
+        if (pending != null) for (int i = 0; i < pending.length; i++) {
+            profiles.add("{\"index\":" + (i + 1) + ",\"name\":" + quote(pending[i].username == null ? "Unbekannt" : pending[i].username) + "}");
+        }
+        var provider = HytaleServer.get().getConfig().getAuthCredentialStoreProvider();
+        boolean encrypted = provider != null && provider.getClass().getSimpleName().toLowerCase(Locale.ROOT).contains("encrypted");
+        var expiry = auth.getTokenExpiry();
+        boolean valid = auth.hasSessionToken() && auth.hasIdentityToken() && (expiry == null || expiry.isAfter(java.time.Instant.now()));
+        String output = "{\"at\":" + System.currentTimeMillis() / 1000.0
+            + ",\"authenticated\":" + valid + ",\"mode\":" + quote(auth.getAuthMode().name())
+            + ",\"profile\":" + (profile == null ? "null" : quote(profile.username == null ? "Unbekannt" : profile.username))
+            + ",\"encrypted\":" + encrypted + ",\"profiles\":[" + String.join(",", profiles) + "]}";
+        // Only status and profile names leave the game process, never OAuth/session tokens.
+        Path temporary = Path.of(".hypanel-auth.tmp");
+        Files.writeString(temporary, output);
+        Files.move(temporary, Path.of(".hypanel-auth.json"), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
     }
 }

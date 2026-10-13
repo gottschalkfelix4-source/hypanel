@@ -29,6 +29,11 @@ def apply_staged():
 
 
 def install():
+    if os.getenv('HYPANEL_DOWNLOAD_AUTH_ONLY', 'false') == 'true':
+        print('[HyPanel] Download-Anmeldung für diesen Server; keine Serverdateien werden ersetzt.', flush=True)
+        raise SystemExit(subprocess.call(['/opt/hytale-downloader', '-skip-update-check', '-print-version',
+                                         '-credentials-path', str(GAME / '.hytale-downloader-credentials.json'),
+                                         '-patchline', os.environ.get('PATCHLINE', 'release')], cwd=GAME))
     archive = GAME / ".download.zip"
     extracted = GAME / ".download-staging"
     print("[HyPanel] Offizieller Hytale-Downloader. Gerätecode hier in der Konsole bestätigen.", flush=True)
@@ -63,10 +68,8 @@ def install():
 def prepare_telemetry():
     directory = GAME / "Server"
     (directory / ".hypanel-telemetry.json").unlink(missing_ok=True)
+    (directory / ".hypanel-auth.json").unlink(missing_ok=True)
     output = directory / "mods/HyPanelTelemetry.jar"
-    if os.getenv("HYPANEL_TELEMETRY", "true").lower() != "true":
-        output.unlink(missing_ok=True)
-        return
     import tempfile
     source = Path(__file__).parent / "telemetry"
     try:

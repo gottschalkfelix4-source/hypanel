@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import HTTPException
 from .store import DATA
 
-PROTECTED = {"auth.enc", "auth.key", ".machine-id", ".hypanel-telemetry.json", ".hytale-downloader-credentials.json", ".hytale-server-credentials.json"}
+PROTECTED = {"auth.enc", "auth.key", ".machine-id", ".hypanel-telemetry.json", ".hypanel-telemetry.tmp", ".hypanel-auth.json", ".hypanel-auth.tmp", ".hytale-downloader-credentials.json", ".hytale-server-credentials.json"}
 MAX_ARCHIVE_BYTES = 32 * 1024**3
 
 

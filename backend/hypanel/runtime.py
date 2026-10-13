@@ -75,7 +75,7 @@ def state(server, metrics=False):
     return result
 
 
-def launch(server, install=False):
+def launch(server, install=False, auth_only=False):
     sid = server["id"]
     with lock(sid):
         if EXTERNAL_WRITES.get(sid, 0):
@@ -91,6 +91,7 @@ def launch(server, install=False):
         directory.mkdir(parents=True, exist_ok=True)
         owned_tree(directory)
         env = {"HYPANEL_MODE": "install" if install else "runner", "SERVER_MEMORY_MB": str(server["memory_mb"]),
+               "HYPANEL_DOWNLOAD_AUTH_ONLY": "true" if install and auth_only else "false",
                "SERVER_CPUS": str(server["cpus"]), "HYPANEL_TELEMETRY": os.getenv("HYPANEL_TELEMETRY", "true"),
                "SERVER_PORT": str(server["port"]), "PATCHLINE": server["patchline"], "PYTHONUNBUFFERED": "1"}
         c = client().containers.run(

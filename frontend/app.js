@@ -1,4 +1,6 @@
 import { Chart } from './charts.js';
+import { mountHytaleAuth } from './hytale-auth.js';
+let authCleanup=()=>{};
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -36,7 +38,7 @@ function bind(selector, event, fn, root = document) {
   }));
 }
 function formValues(form) { return Object.fromEntries(new FormData(form)); }
-function disconnect() { source?.close(); source = null; clearInterval(metricsTimer); clearInterval(overviewTimer); clearInterval(jobTimer); charts.forEach(c=>c.destroy()); charts=[]; }
+function disconnect() { authCleanup(); source?.close(); source = null; clearInterval(metricsTimer); clearInterval(overviewTimer); clearInterval(jobTimer); charts.forEach(c=>c.destroy()); charts=[]; }
 function modal(title, content, submit, label = 'Speichern') {
   const dialog = $('#dialog');
   $('#dialog-content').innerHTML = `<h2>${escape(title)}</h2><form id="modal-form">${content}<div class="error" id="modal-error" hidden></div><div class="form-actions"><button type="button" id="cancel">Abbrechen</button><button type="submit" class="primary">${escape(label)}</button></div></form>`;
@@ -109,6 +111,7 @@ function serverForm(existing, clone = false) {
   if(!can('settings.write'))$$('#edit-server').forEach(n=>n.disabled=true);
   if(!can('files.read'))$$('[data-tab=files]').forEach(n=>n.disabled=true);
   if(!can('console.read'))$$('[data-tab=console]').forEach(n=>n.disabled=true);
+  if(!can('auth.manage'))$$('[data-tab=hytale],[data-open-hytale]').forEach(n=>n.disabled=true);
   if(user.role!=='admin')$$('#modal-form [name=port],#modal-form [name=memory_mb],#modal-form [name=cpus],#modal-form [name=patchline]').forEach(n=>n.disabled=true);
 }
 async function openServer(id) {
@@ -120,9 +123,10 @@ function updateMetrics() {
   $('#server-meta').innerHTML = `${status(selected.status==='running'&&!selected.ready?'starting':selected.status)}<span>UDP <strong>${escape(location.hostname)}:${selected.port}</strong></span><span>RAM <strong>${bytes(selected.memory_bytes)} / ${bytes(selected.memory_mb*1024**2)}</strong></span><span>CPU <strong>${(selected.cpu_percent/selected.cpus).toFixed(1)}% / ${selected.cpus} Kerne</strong></span>${selected.exit_code?`<span>Exit-Code ${selected.exit_code}</span>`:''}`;
 }
 async function renderServer() {
+  authCleanup();
   source?.close(); source = null;
   clearInterval(overviewTimer);charts.forEach(c=>c.destroy());charts=[];
-  const tabs = {overview:'Übersicht',console:'Konsole',files:'Dateien',config:'Konfiguration',mods:'Mods / Plugins',catalog:'Mod-Browser',worlds:'Welten',players:'Spieler',backups:'Backups',schedules:'Zeitpläne',access:'Zugriff',settings:'Einstellungen'};
+  const tabs = {overview:'Übersicht',hytale:'Hytale-Account',console:'Konsole',files:'Dateien',config:'Konfiguration',mods:'Mods / Plugins',catalog:'Mod-Browser',worlds:'Welten',players:'Spieler',backups:'Backups',schedules:'Zeitpläne',access:'Zugriff',settings:'Einstellungen'};
   $('#content').innerHTML = `<button id="back" class="name-button">← Alle Server</button><div class="titlebar spaced"><div><h1>${escape(selected.name)}</h1><div class="server-meta" id="server-meta"></div></div><div class="actions"><button data-power="start" class="primary">Starten</button><button data-power="restart">Neustart</button><button data-power="stop">Stoppen</button><button data-power="kill" class="danger">Erzwingen</button></div></div><nav class="tabs" aria-label="Serverbereiche">${Object.entries(tabs).map(([key,label])=>`<button data-tab="${key}" class="${tab===key?'active':''}">${label}</button>`).join('')}</nav><div id="tab-content"></div>`;
   updateMetrics();
   bind('#back','click',()=>navigate('servers'));
@@ -131,7 +135,7 @@ async function renderServer() {
     if(n.dataset.power==='kill') confirmAction('Server sofort beenden','Nicht gespeicherte Daten können verloren gehen.',action,'Sofort beenden'); else await action();
   });
   bind('[data-tab]','click',async(_,n)=>{tab=n.dataset.tab; await renderServer();});
-  await ({overview:renderOverview,catalog:renderCatalog,access:renderAccess,console:renderConsole,files:renderFiles,config:renderConfig,mods:renderMods,worlds:renderWorlds,players:renderPlayers,backups:renderBackups,schedules:renderSchedules,settings:renderServerSettings}[tab])();
+  await ({overview:renderOverview,hytale:renderHytaleAuth,catalog:renderCatalog,access:renderAccess,console:renderConsole,files:renderFiles,config:renderConfig,mods:renderMods,worlds:renderWorlds,players:renderPlayers,backups:renderBackups,schedules:renderSchedules,settings:renderServerSettings}[tab])();
   applyRights();
 }
 function applyRights(){
@@ -141,11 +145,12 @@ function applyRights(){
   if(!can('settings.write'))$$('#edit-server').forEach(n=>n.disabled=true);
   if(!can('files.read'))$$('[data-tab=files]').forEach(n=>n.disabled=true);
   if(!can('console.read'))$$('[data-tab=console]').forEach(n=>n.disabled=true);
+  if(!can('auth.manage'))$$('[data-tab=hytale],[data-open-hytale]').forEach(n=>n.disabled=true);
   if(user.role!=='admin')$$('#install,#import,#clone-server,[data-delete-backup],#backup-policy button').forEach(n=>n.disabled=true);
 }
 async function renderConsole(){
   if(!can('console.read')){$('#tab-content').innerHTML='<div class="empty">Keine Berechtigung zum Lesen der Konsole.</div>';return;}
-  $('#tab-content').innerHTML=`${!selected.installed?'<div class="hint">Hytale zuerst unter Einstellungen installieren oder importieren.</div>':''}<div class="toolbar"><div class="actions"><button data-command="auth login device">Hytale anmelden</button><button data-command="auth persistence Encrypted">Anmeldung speichern</button><button data-command="auth status">Auth-Status</button><button data-command="help">Hilfe</button></div><a href="/api${serverUrl('/logs?download=true')}">Protokoll herunterladen</a></div><div class="console-tools"><label>Filter<input id="console-filter" type="search" placeholder="Protokoll durchsuchen"></label><label class="checkbox"><input id="console-follow" type="checkbox" checked>Automatisch scrollen</label><button id="console-clear">Anzeige leeren</button></div><pre class="console spaced" id="console" aria-label="Serverkonsole"></pre><form class="command-form" id="command-form"><input name="command" required maxlength="2048" placeholder="Konsolenbefehl, z. B. help" aria-label="Konsolenbefehl" autocomplete="off"><button type="submit">Senden</button></form><p class="muted small">↑ / ↓ ruft den Befehlsverlauf dieser Sitzung auf. Geräteanmeldung im offiziellen Hytale-Fenster bestätigen.</p>`;
+  $('#tab-content').innerHTML=`${!selected.installed?'<div class="hint">Hytale zuerst unter Einstellungen installieren oder importieren.</div>':''}<div class="toolbar"><div class="actions"><button data-open-hytale>Hytale-Anmeldeassistent</button><button data-command="help">Hilfe</button></div><a href="/api${serverUrl('/logs?download=true')}">Protokoll herunterladen</a></div><div class="console-tools"><label>Filter<input id="console-filter" type="search" placeholder="Protokoll durchsuchen"></label><label class="checkbox"><input id="console-follow" type="checkbox" checked>Automatisch scrollen</label><button id="console-clear">Anzeige leeren</button></div><pre class="console spaced" id="console" aria-label="Serverkonsole"></pre><form class="command-form" id="command-form"><input name="command" required maxlength="2048" placeholder="Konsolenbefehl, z. B. help" aria-label="Konsolenbefehl" autocomplete="off"><button type="submit">Senden</button></form><p class="muted small">↑ / ↓ ruft den Befehlsverlauf dieser Sitzung auf. Geräteanmeldung im offiziellen Hytale-Fenster bestätigen.</p>`;
   let output='',skip=0;
   const show=logs=>{output=logs;const node=$('#console');if(!node)return;const filter=$('#console-filter').value.toLowerCase();const lines=logs.split('\n').slice(skip).filter(line=>line.toLowerCase().includes(filter));node.innerHTML=lines.map(line=>`<span class="${/error|exception|severe/i.test(line)?'console-error':/warn/i.test(line)?'console-warn':''}">${escape(line)}</span>`).join('\n')||'Noch keine passende Serverausgabe.';if($('#console-follow').checked)node.scrollTop=node.scrollHeight;};
   show((await api(serverUrl('/logs'))).logs);source=new EventSource('/api'+serverUrl('/events'));source.onmessage=e=>{try{show(JSON.parse(e.data).logs);}catch{}};source.addEventListener('closed',()=>source?.close());
@@ -153,6 +158,7 @@ async function renderConsole(){
   bind('#command-form','submit',async(_,n)=>{const value=formValues(n).command;await api(serverUrl('/command'),'POST',{command:value});commandHistory.push(value);if(commandHistory.length>100)commandHistory.shift();historyIndex=commandHistory.length;n.reset();});
   $('#command-form input').addEventListener('keydown',e=>{if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();historyIndex=Math.min(commandHistory.length,Math.max(0,historyIndex+(e.key==='ArrowUp'?-1:1)));e.target.value=commandHistory[historyIndex]||'';}});
   bind('[data-command]','click',(_,n)=>sendCommand(n.dataset.command));
+  bind('[data-open-hytale]','click',async()=>{tab='hytale';await renderServer();});
 }
 async function sendCommand(command) { await api(serverUrl('/command'),'POST',{command}); notify('Befehl gesendet. Ergebnis in der Konsole.'); }
 async function editText(path, title=path) {
@@ -211,6 +217,7 @@ async function renderPlayers() {
   $('#tab-content').innerHTML=`<h2>Spielerverwaltung</h2><p class="muted">Befehle werden an den echten Server gesendet. Die Antworten erscheinen in der Konsole.</p><div class="actions"><button data-command="who">Spielerliste abfragen</button><button data-command="whitelist list">Whitelist anzeigen</button><button data-command="whitelist enable">Whitelist aktivieren</button><button data-command="whitelist disable">Whitelist deaktivieren</button><button data-player-file="Server/whitelist.json">Whitelist-Datei</button><button data-player-file="Server/bans.json">Sperrliste</button><button data-player-file="Server/permissions.json">Berechtigungen</button></div><div class="section"><form id="player-action"><div class="form-grid"><label>Spielername oder UUID<input name="player" required pattern="[A-Za-z0-9_-]+" maxlength="64"></label><label>Aktion<select name="action"><option value="kick">Kicken</option><option value="ban">Sperren</option><option value="unban">Entsperren</option><option value="whitelist add">Zur Whitelist hinzufügen</option><option value="whitelist remove">Von Whitelist entfernen</option><option value="op add">Operator hinzufügen</option><option value="op remove">Operator entfernen</option></select></label></div><button type="submit">Ausführen</button></form></div><p class="small muted">Verfügbare Befehle und erforderliche Parameter können sich mit Hytale-Versionen ändern. Nutze <code>help</code> in der Konsole für die aktuelle Syntax.</p>`;
   $('#tab-content').insertAdjacentHTML('afterbegin',`<div class="section"><h3>Aktive Spieler</h3>${players.available?table(['Name','UUID'],players.online.map(p=>`<tr><td>${escape(p.name)}</td><td>${escape(p.uuid)}</td></tr>`),'Keine Spieler online.'):'<p class="muted">Telemetrie beim nächsten Serverstart verfügbar.</p>'}<h3 class="spaced">Bekannte Spieler</h3>${table(['Name','Zuletzt gesehen'],players.known.map(p=>`<tr><td>${escape(p.name)}</td><td>${date(p.last_seen)}</td></tr>`),'Noch keine Spieler erfasst.')}</div>`);
   bind('[data-command]','click',(_,n)=>sendCommand(n.dataset.command));
+  bind('[data-open-hytale]','click',async()=>{tab='hytale';await renderServer();});
   bind('[data-player-file]','click',(_,n)=>editText(n.dataset.playerFile));
   bind('#player-action','submit',async(e,n)=>{const v=formValues(n);confirmAction('Spieleraktion ausführen',v.action+' '+v.player,()=>api(serverUrl('/players/action'),'POST',{action:v.action,player:v.player}));});
 }
@@ -275,7 +282,7 @@ async function renderAccount() {
   bind('[data-revoke-token]','click',(_,n)=>confirmAction('API-Schlüssel widerrufen','Dieser Schlüssel verliert sofort den Zugriff.',async()=>{await api('/me/tokens/'+n.dataset.revokeToken,'DELETE');await renderAccount();},'Widerrufen'));
 }
 
-const rightLabels={'console.read':'Konsole lesen','console.write':'Befehle senden','server.power':'Starten / Stoppen','files.read':'Dateien lesen','files.write':'Dateien bearbeiten','config.write':'Konfiguration ändern','mods.write':'Mods verwalten','backups.create':'Backups erstellen','backups.restore':'Backups einspielen','automation.write':'Automation verwalten','access.write':'Mitglieder verwalten','settings.write':'Servereinstellungen ändern','players.write':'Spieler verwalten'};
+const rightLabels={'console.read':'Konsole lesen','console.write':'Befehle senden','server.power':'Starten / Stoppen','files.read':'Dateien lesen','files.write':'Dateien bearbeiten','config.write':'Konfiguration ändern','mods.write':'Mods verwalten','backups.create':'Backups erstellen','backups.restore':'Backups einspielen','automation.write':'Automation verwalten','access.write':'Mitglieder verwalten','settings.write':'Servereinstellungen ändern','players.write':'Spieler verwalten','auth.manage':'Hytale-Account verwalten'};
 const jobLabels={queued:'Wartet',running:'Läuft',done:'Abgeschlossen',failed:'Fehlgeschlagen',cancelled:'Abgebrochen'};
 function can(right){return user.role==='admin'||(selected?.rights||[]).includes(right);}
 function stat(label,value,caption='',percent=null,cls=''){return `<div class="stat-card"><span class="caption">${escape(label)}</span><div class="value">${escape(value)}</div><span class="caption">${escape(caption)}</span>${percent===null?'':bar(percent,cls)}</div>`;}
@@ -311,7 +318,7 @@ async function startTask(body,refresh){
 async function renderAccess(){
   if(user.role!=='admin'&&!can('access.write')){$('#tab-content').innerHTML='<div class="empty">Keine Berechtigung zur Verwaltung der Mitglieder.</div>';return;}
   const [members,users]=await Promise.all([api(serverUrl('/access')),api(serverUrl('/access/candidates'))]);
-  $('#tab-content').innerHTML=`<div class="titlebar"><div><h2>Serverzugriff</h2><p class="muted">13 einzeln vergebbare Rechte. Administratoren haben immer Zugriff.</p></div><button id="access-new" class="primary">Mitglied hinzufügen</button></div>${table(['Mitglied','Berechtigungen',''],members.map(m=>`<tr><td>${escape(m.username)}</td><td class="wrap">${m.rights.map(r=>escape(rightLabels[r])).join(', ')}</td><td><button data-access="${m.user_id}">Bearbeiten</button></td></tr>`),'Noch keine Mitglieder zugewiesen.')}`;
+  $('#tab-content').innerHTML=`<div class="titlebar"><div><h2>Serverzugriff</h2><p class="muted">14 einzeln vergebbare Rechte. Administratoren haben immer Zugriff.</p></div><button id="access-new" class="primary">Mitglied hinzufügen</button></div>${table(['Mitglied','Berechtigungen',''],members.map(m=>`<tr><td>${escape(m.username)}</td><td class="wrap">${m.rights.map(r=>escape(rightLabels[r])).join(', ')}</td><td><button data-access="${m.user_id}">Bearbeiten</button></td></tr>`),'Noch keine Mitglieder zugewiesen.')}`;
   const edit=(existing)=>modal('Serverberechtigungen',`<label>Mitglied<select name="user_id" ${existing?'disabled':''}>${users.filter(u=>u.role!=='admin').map(u=>`<option value="${u.id}" ${u.id===existing?.user_id?'selected':''}>${escape(u.username)}</option>`).join('')}</select></label><div class="form-grid">${Object.entries(rightLabels).map(([r,l])=>`<label class="checkbox"><input type="checkbox" name="rights" value="${r}" ${existing?.rights?.includes(r)?'checked':''}>${l}</label>`).join('')}</div>${existing?'<label class="checkbox"><input name="remove" type="checkbox">Mitglied entfernen</label>':''}`,async(v,f)=>{await api(serverUrl('/access'),'PUT',{user_id:existing?.user_id||v.user_id,permission:f.elements.remove?.checked?'none':'custom',rights:[...f.querySelectorAll('[name=rights]:checked')].map(n=>n.value)});await renderAccess();});
   bind('#access-new','click',()=>edit());bind('[data-access]','click',(_,n)=>edit(members.find(m=>m.user_id===n.dataset.access)));
 }
@@ -327,3 +334,8 @@ async function renderPanelBackups(){
   const rows=await api('/panel-backups');$('#content').insertAdjacentHTML('beforeend',`<div class="section"><div class="titlebar"><h2>Panel-Sicherungen</h2><button id="panel-backup-create">Panel sichern</button></div><p class="hint">Enthält Datenbank, Einstellungen, Identitäten und SFTP-Hostschlüssel. Archive enthalten Zugangsdaten und gehören in eine geschützte Ablage. Spielwelten werden separat gesichert.</p>${table(['Sicherung','Größe',''],rows.map(b=>`<tr><td>${escape(b.name)}</td><td>${bytes(b.size)}</td><td><a href="/api/panel-backups/${enc(b.name)}">Download</a> <button data-panel-backup-delete="${escape(b.name)}" class="danger">Löschen</button></td></tr>`),'Noch keine Panel-Sicherungen.')}</div>`);bind('#panel-backup-create','click',async()=>{await api('/panel-backups','POST');await renderSystem();});bind('[data-panel-backup-delete]','click',(_,n)=>confirmAction('Panel-Sicherung löschen',n.dataset.panelBackupDelete,async()=>{await api('/panel-backups/'+enc(n.dataset.panelBackupDelete),'DELETE');await renderSystem();},'Löschen'));
 }
 try {panelVersion=(await api('/health')).version;user=await api('/me');await navigate('servers');}catch{await auth();}
+
+function renderHytaleAuth(){
+  if(!can('auth.manage')){$('#tab-content').textContent='Keine Berechtigung zum Verwalten des Hytale-Accounts.';return;}
+  authCleanup=mountHytaleAuth({element:$('#tab-content'),sid:selected.id,name:selected.name,api,escape,can});
+}

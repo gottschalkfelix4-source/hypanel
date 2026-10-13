@@ -1,5 +1,17 @@
 from pathlib import Path
 from hypanel import runner
+import pytest
+
+
+def test_download_account_login_only_never_installs_or_replaces_server_files(tmp_path,monkeypatch):
+    monkeypatch.setattr(runner,'GAME',tmp_path)
+    monkeypatch.setenv('HYPANEL_DOWNLOAD_AUTH_ONLY','true')
+    original=tmp_path/'HytaleServer.jar';original.write_bytes(b'keep-server')
+    commands=[]
+    monkeypatch.setattr(runner.subprocess,'call',lambda argv,cwd:commands.append(argv) or 0)
+    with pytest.raises(SystemExit) as result:runner.install()
+    assert result.value.code==0 and '-print-version' in commands[0]
+    assert '-download-path' not in commands[0] and original.read_bytes()==b'keep-server'
 
 
 def test_staged_update_preserves_worlds_config_mods_and_auth(tmp_path,monkeypatch):

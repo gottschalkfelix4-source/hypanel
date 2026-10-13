@@ -11,7 +11,7 @@ from croniter import croniter
 from fastapi import HTTPException
 from . import store, runtime
 from .files import root, create_zip, zip_entries, extract_zip, owned_tree, safe_path
-from .security import audit
+from .security import audit, changes_hytale_auth
 
 
 def require_stopped(sid):
@@ -146,6 +146,8 @@ def scheduled_action(job):
             runtime.stop(server["id"])
             runtime.launch(server)
         elif action == "command":
+            if changes_hytale_auth(job['command']):
+                raise HTTPException(400, 'Hytale-Anmeldungen im Anmeldeassistenten verwalten')
             runtime.command(server["id"], job["command"])
         elif action == "update":
             require_stopped(server["id"])

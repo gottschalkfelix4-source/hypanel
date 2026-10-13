@@ -21,9 +21,11 @@ from pydantic import BaseModel, Field
 from . import store, runtime, operations, jobs, __version__
 from . import metrics as monitoring
 from .features import router as features_router
+from .hytale_auth import router as hytale_auth_router, mask_device_codes
 from .files import root, safe_path, atomic_write, extract_zip, owned_tree, PROTECTED
 from .security import current_user, admin, access, audit, check_origin, hash_password, verify_password, throttle, digest, rights, RIGHTS
 from .limits import UploadLimitMiddleware
+from .security import changes_hytale_auth
 
 User = Annotated[dict, Depends(current_user)]
 VERSION = __version__
@@ -322,6 +324,8 @@ class Command(BaseModel):
 @app.post("/api/servers/{sid}/command")
 def command(sid: str, body: Command, user: User):
     access(user, sid, right="console.write")
+    if changes_hytale_auth(body.command):
+        access(user, sid, right='auth.manage')
     runtime.command(sid, body.command)
     # Command contents may contain passwords/tokens; only log the verb.
     audit(user, "console.command", sid, body.command.split()[0])
@@ -340,6 +344,8 @@ def logs(sid: str, user: User, install: bool = False, download: bool = False):
     if install:
         admin(user)
     content = clean_logs(runtime.logs(sid, install, tail="all" if download else 500))
+    if 'auth.manage' not in rights(user, sid):
+        content = mask_device_codes(content)
     if download:
         return Response(content, media_type="text/plain", headers={"Content-Disposition": 'attachment; filename="console.log"'})
     return {"logs": content}
@@ -358,6 +364,8 @@ async def events(sid: str, request: Request, user: User):
                 access(user, sid, right="console.read")
                 value = await asyncio.to_thread(runtime.logs, sid, False, 300)
                 value = clean_logs(value)
+                if 'auth.manage' not in rights(user, sid):
+                    value = mask_device_codes(value)
                 if value != previous:
                     yield "data: " + json.dumps({"logs": value}) + "\n\n"
                     previous = value
@@ -620,6 +628,8 @@ def schedules(sid: str, user: User):
 @app.post("/api/servers/{sid}/schedules", status_code=201)
 def create_schedule(sid: str, body: Schedule, user: User):
     access(user, sid, right="automation.write")
+    if body.action == 'command' and changes_hytale_auth(body.command):
+        raise HTTPException(400, 'Hytale-Anmeldungen im Anmeldeassistenten verwalten')
     if body.action == "command" and (not body.command or any(c in body.command for c in "\r\n\x00")):
         raise HTTPException(400, "Einzelnen Konsolenbefehl angeben")
     next_at = operations.next_run(body.cron, body.timezone)
@@ -785,6 +795,8 @@ def delete_token(tid: str, user: User):
 @app.put("/api/servers/{sid}/schedules/{jid}")
 def edit_schedule(sid: str, jid: str, body: Schedule, user: User):
     access(user, sid, right="automation.write")
+    if body.action == 'command' and changes_hytale_auth(body.command):
+        raise HTTPException(400, 'Hytale-Anmeldungen im Anmeldeassistenten verwalten')
     if not store.query("SELECT id FROM schedules WHERE id=? AND server_id=?", (jid, sid)):
         raise HTTPException(404, "Zeitplan nicht gefunden")
     if body.action == "command" and (not body.command or any(c in body.command for c in "\r\n\x00")):
@@ -809,6 +821,7 @@ def run_schedule(sid: str, jid: str, user: User):
 
 
 app.include_router(features_router)
+app.include_router(hytale_auth_router)
 FRONTEND = Path(os.getenv("HYPANEL_FRONTEND", str(Path(__file__).resolve().parents[2] / "frontend")))
 if FRONTEND.exists():
     @app.get("/docs", include_in_schema=False)

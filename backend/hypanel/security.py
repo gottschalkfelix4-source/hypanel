@@ -58,7 +58,12 @@ def admin(user):
 
 
 RIGHTS = ['console.read', 'console.write', 'server.power', 'files.read', 'files.write', 'config.write',
-          'mods.write', 'backups.create', 'backups.restore', 'automation.write', 'access.write', 'settings.write', 'players.write']
+          'mods.write', 'backups.create', 'backups.restore', 'automation.write', 'access.write', 'settings.write', 'players.write', 'auth.manage']
+
+
+def changes_hytale_auth(command):
+    parts = command.strip().lstrip('/').lower().split()
+    return bool(parts) and parts[0] == 'auth' and parts != ['auth', 'status']
 
 
 def rights(user, sid):

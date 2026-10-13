@@ -2,7 +2,7 @@
 
 Vorlage: [gottschalkfelix4-source/mcpanel](https://github.com/gottschalkfelix4-source/mcpanel), Commit `7d303982cc937ca8d081d122a4f3b26feab419f1`. Am Minecraft-Projekt und seinen Diensten wurden keine Änderungen vorgenommen.
 
-| MCPanel-Bereich | HyPanel 0.2.0 |
+| MCPanel-Bereich | HyPanel 0.3.0 |
 | --- | --- |
 | Gestaltung | Kopfleiste, Steinrahmen, versenkte Felder, Pixel- und Rubik-Schrift, responsive Serverkarten |
 | Server | Docker-Container, UDP-Port, CPU/RAM, Java ActiveProcessorCount, Power-Aktionen, Autostart, Absturz-Neustart, Klonen |
@@ -14,7 +14,8 @@ Vorlage: [gottschalkfelix4-source/mcpanel](https://github.com/gottschalkfelix4-s
 | Backups | Daten/vollständig, konsistenter Stopp/Neustart, Archivprüfung und Sicherheitsbackup vor Restore, Anzahl-Rotation, Server-/Globalquoten |
 | Spieler | Live-/Historienliste; Kick, Ban, Unban, Whitelist und Operator-Aktionen über Hytale-Konsole |
 | Automation | Cron mit Zeitzone, Backup/Start/Stop/Neustart/Befehl/Downloader-Update, manuell ausführen, bearbeiten, pausieren |
-| Zugriff | Administratoren/Mitglieder; 13 Serverrechte, eingeschränkte Delegation |
+| Zugriff | Administratoren/Mitglieder; 14 Serverrechte, eingeschränkte Delegation |
+| Hytale-Accounts | Assistent je Server für Download, Geräteanmeldung, Profilauswahl, verschlüsselte Speicherung und Abmeldung; eigenes delegierbares Recht |
 | Panel | Benutzer, API-Schlüssel, Aktivitäten, Host-Werte, Auftragsliste, lokale Panel-Sicherung |
 
 ## Hytale-Unterschiede und verbleibende Erweiterungen

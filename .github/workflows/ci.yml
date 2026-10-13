@@ -18,6 +18,7 @@ jobs:
       - run: pytest -q
       - run: node --check frontend/app.js
       - run: node --check frontend/charts.js
+      - run: node --check frontend/hytale-auth.js
       - run: python -c "import xml.etree.ElementTree as E; E.parse('unraid/hypanel.xml')"
   image:
     needs: test

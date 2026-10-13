@@ -1,14 +1,36 @@
 # HyPanel
 
 Die Oberfläche und Verwaltung orientieren sich an [MCPanel](https://github.com/gottschalkfelix4-source/mcpanel).
-Version **0.2.0** ergänzt Serverkarten mit Steinrahmen, Messwertverläufe und echte Hytale-TPS/Spielerdaten,
-13 Serverrechte, einen CurseForge-Mod-Browser, Hintergrundaufträge, Backup-Quoten, SFTP und Panel-Sicherungen.
+Version **0.3.0** ergänzt einen Hytale-Anmeldeassistenten pro Server. Freunde können ihren eigenen
+Account für Download und Spielserver verwenden. Dazu kommen 14 Serverrechte, Serverkarten mit Steinrahmen,
+Messwertverläufe, echte Hytale-TPS/Spielerdaten, Mod-Browser, Hintergrundaufträge, Backup-Quoten und SFTP.
+
+### Hytale-Account pro Server
+
+Öffne einen Server und dann **Hytale-Account**. Der Assistent führt durch Download-Anmeldung,
+Serverstart, Geräteanmeldung, gegebenenfalls Profilauswahl und verschlüsselte Speicherung.
+Links und Codes werden nur für diesen Server angezeigt. Das Hytale-Passwort wird ausschließlich
+auf der offiziellen Hytale-Seite eingegeben. Prüfe dort, dass der gewünschte Account ausgewählt ist.
+
+Für Freunde unter **Zugriff** die Rechte **Hytale-Account verwalten** und **Starten / Stoppen** vergeben.
+Ein Panel-Administrator erstellt zuvor das Benutzerkonto und den Server. Vorhandene benutzerdefinierte
+Rechte werden nicht automatisch erweitert; Operatoren erhalten das neue Recht.
+
+Download- und Server-Anmeldung sind zwei offizielle Hytale-Abläufe und können zwei Bestätigungen erfordern.
+Auch bei bereits installierten Dateien lässt sich **Download-Account verbinden** verwenden; dabei wird nur
+die Berechtigung geprüft und kein Spielpaket heruntergeladen. Dafür muss der Server gestoppt sein.
+Ihre Zugangsdaten bleiben im jeweiligen Serververzeichnis; Server-Klone übernehmen keine Anmeldung.
+**Server abmelden / Account wechseln** trennt nur diesen Spielserver. Die Download-Anmeldung lässt sich
+separat entfernen. Vorhandene Spielserver nach dem Panel-Update einmal neu starten, um das Statusmodul zu laden.
+Bei gestopptem Server zeigt der Assistent nur, ob eine Anmeldedatei vorhanden ist; ihre Gültigkeit wird beim Start geprüft.
+Der Ablauf verwendet die [offiziellen Hytale-Gerätebefehle](https://support.hytale.com/hc/en-us/articles/45328341414043-Server-Provider-Authentication-Guide).
 
 [Funktionsabgleich, Einrichtung und Hytale-Unterschiede](docs/mcpanel-vergleich.md)
 
 SFTP ist im Unraid-Template auf **2223/TCP** vorgesehen. Für den Mod-Browser einen eigenen
 CurseForge-API-Schlüssel unter **Panel** speichern. Das lokale Telemetrie-Plugin wird beim
 Serverstart gegen deine Hytale-Version kompiliert; es öffnet keinen Netzwerkport.
+`HYPANEL_TELEMETRY=false` deaktiviert die Spielmesswerte; der lokale Anmeldestatus bleibt verfügbar.
 
 Ein selbst gehostetes Hytale-Serverpanel für Docker und Unraid. Jeder Spielserver läuft in einem eigenen Container mit eigenem UDP-Port, persistenten Daten und begrenzten CPU-/RAM-Ressourcen. Die deutschsprachige Weboberfläche benötigt keinen separaten Webserver oder zusätzliche Datenbank.
 
