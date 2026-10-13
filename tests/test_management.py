@@ -6,6 +6,12 @@ from fastapi import HTTPException
 from hypanel import store, metrics, operations, runtime, jobs, providers
 
 
+def test_health_reports_the_deployable_package_version(panel):
+    from hypanel import __version__
+    client, _ = panel
+    assert client.get('/api/health').json()['version'] == __version__
+
+
 def test_telemetry_expires_and_missing_tps_stays_null(server):
     _, directory, sid = server
     path = directory / 'servers' / sid / 'Server/.hypanel-telemetry.json'

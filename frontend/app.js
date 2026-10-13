@@ -7,6 +7,7 @@ const bytes = value => value >= 1024**3 ? `${(value/1024**3).toFixed(2)} GiB` : 
 const date = value => value ? new Date(value*1000).toLocaleString('de-DE') : '—';
 const labels = {running:'Läuft',stopped:'Gestoppt',exited:'Beendet',created:'Erstellt',restarting:'Neustart',unavailable:'Docker nicht erreichbar',paused:'Pausiert',starting:'Wird gestartet'};
 let charts=[], overviewTimer, jobTimer, commandHistory=[], historyIndex=0;
+let panelVersion = '—';
 let user, servers = [], selected, section = 'servers', tab = 'console', filePath = 'Server', source, metricsTimer, noticeTimer;
 
 function notify(message, error = false) {
@@ -76,7 +77,7 @@ const icons={servers:svgIcon('<rect x="3" y="3" width="18" height="7"/><rect x="
 function brand(){return '<div class="brand"><img src="/icon.svg" alt=""><div><strong>HyPanel</strong><small>Hytale Server Hosting</small></div></div>';}
 function shell() {
   const navigation={servers:'Server',...(user.role==='admin'?{users:'Benutzer',jobs:'Aufträge',audit:'Aktivitäten',system:'Panel'}:{})};
-  $('#app').innerHTML=`<div class="shell"><header class="site-header"><div class="grass-strip"></div><div class="header-inner">${brand()}<nav aria-label="Hauptnavigation">${Object.entries(navigation).map(([key,label])=>`<button data-nav="${key}" class="${section===key?'active':''}">${icons[key]||icons.jobs}${label}</button>`).join('')}</nav><details class="account-menu"><summary aria-label="Benutzermenü"><span class="avatar">${escape(user.username[0].toUpperCase())}</span><span>${escape(user.username)}</span>⌄</summary><div class="account-dropdown"><strong>${escape(user.username)}</strong><p class="small muted">${user.role==='admin'?'Administrator':'Mitglied'}</p><button data-nav="account">Mein Konto</button><button id="logout">Abmelden</button></div></details></div></header><main class="content" id="content"></main><footer class="site-footer">HyPanel · selbstgehostet · Hytale auf Docker & Unraid · 0.2.1</footer></div>`;
+  $('#app').innerHTML=`<div class="shell"><header class="site-header"><div class="grass-strip"></div><div class="header-inner">${brand()}<nav aria-label="Hauptnavigation">${Object.entries(navigation).map(([key,label])=>`<button data-nav="${key}" class="${section===key?'active':''}">${icons[key]||icons.jobs}${label}</button>`).join('')}</nav><details class="account-menu"><summary aria-label="Benutzermenü"><span class="avatar">${escape(user.username[0].toUpperCase())}</span><span>${escape(user.username)}</span>⌄</summary><div class="account-dropdown"><strong>${escape(user.username)}</strong><p class="small muted">${user.role==='admin'?'Administrator':'Mitglied'}</p><button data-nav="account">Mein Konto</button><button id="logout">Abmelden</button></div></details></div></header><main class="content" id="content"></main><footer class="site-footer">HyPanel · selbstgehostet · Hytale auf Docker & Unraid · ${escape(panelVersion)}</footer></div>`;
   bind('[data-nav]','click',(_,n)=>navigate(n.dataset.nav));
   bind('#logout','click',async()=>{await api('/logout','POST');user=null;disconnect();await auth();});
 }
@@ -325,4 +326,4 @@ async function chooseVersion(pid){const versions=await api(serverUrl('/catalog/'
 async function renderPanelBackups(){
   const rows=await api('/panel-backups');$('#content').insertAdjacentHTML('beforeend',`<div class="section"><div class="titlebar"><h2>Panel-Sicherungen</h2><button id="panel-backup-create">Panel sichern</button></div><p class="hint">Enthält Datenbank, Einstellungen, Identitäten und SFTP-Hostschlüssel. Archive enthalten Zugangsdaten und gehören in eine geschützte Ablage. Spielwelten werden separat gesichert.</p>${table(['Sicherung','Größe',''],rows.map(b=>`<tr><td>${escape(b.name)}</td><td>${bytes(b.size)}</td><td><a href="/api/panel-backups/${enc(b.name)}">Download</a> <button data-panel-backup-delete="${escape(b.name)}" class="danger">Löschen</button></td></tr>`),'Noch keine Panel-Sicherungen.')}</div>`);bind('#panel-backup-create','click',async()=>{await api('/panel-backups','POST');await renderSystem();});bind('[data-panel-backup-delete]','click',(_,n)=>confirmAction('Panel-Sicherung löschen',n.dataset.panelBackupDelete,async()=>{await api('/panel-backups/'+enc(n.dataset.panelBackupDelete),'DELETE');await renderSystem();},'Löschen'));
 }
-try {user=await api('/me');await navigate('servers');}catch{await auth();}
+try {panelVersion=(await api('/health')).version;user=await api('/me');await navigate('servers');}catch{await auth();}

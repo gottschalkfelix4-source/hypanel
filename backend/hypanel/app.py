@@ -18,7 +18,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Respon
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from . import store, runtime, operations, jobs
+from . import store, runtime, operations, jobs, __version__
 from . import metrics as monitoring
 from .features import router as features_router
 from .files import root, safe_path, atomic_write, extract_zip, owned_tree, PROTECTED
@@ -26,7 +26,7 @@ from .security import current_user, admin, access, audit, check_origin, hash_pas
 from .limits import UploadLimitMiddleware
 
 User = Annotated[dict, Depends(current_user)]
-VERSION = "0.2.0"
+VERSION = __version__
 stop_event = threading.Event()
 SETUP_LOCK = threading.Lock()
 UPLOAD_LIMIT = int(os.getenv("HYPANEL_UPLOAD_LIMIT_GB", "16")) * 1024**3
