@@ -14,6 +14,7 @@ def test_game_container_isolation_and_native_library_support(server,monkeypatch)
     assert kwargs['security_opt']==['no-new-privileges:true']
     assert kwargs['read_only'] is True
     assert 'noexec' not in kwargs['tmpfs']['/tmp']
+    assert 'exec' in kwargs['tmpfs']['/tmp'].split(',')
     assert kwargs['pids_limit']==512
     assert kwargs['ports']=={'5520/udp':5520}
     assert kwargs['mem_limit']=='4096m'

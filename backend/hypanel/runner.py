@@ -115,9 +115,15 @@ def run():
     heap = max(1024, int(os.environ.get("SERVER_MEMORY_MB", "4096")) - 1024)
     while not shutdown.is_set():
         apply_staged()
-        argv = ["java", f"-Xms512m", f"-Xmx{heap}m", "-XX:+UseG1GC"]
+        argv = ["java", f"-Xms512m", f"-Xmx{heap}m", "-XX:+UseG1GC", "--enable-native-access=ALL-UNNAMED"]
         if (GAME / "Server/HytaleServer.aot").is_file():
-            argv.append("-XX:AOTCache=HytaleServer.aot")
+            probe = subprocess.run(["java", "-XX:AOTCache=HytaleServer.aot", "-version"],
+                                   cwd=GAME / "Server", capture_output=True, text=True, timeout=15)
+            output = probe.stdout + probe.stderr
+            if probe.returncode == 0 and "[error" not in output and "[warning" not in output:
+                argv.append("-XX:AOTCache=HytaleServer.aot")
+            else:
+                print("[HyPanel] AOT-Cache passt nicht zur JVM. Starte ohne Cache.", flush=True)
         argv.extend(["-jar", "HytaleServer.jar", "--assets", "../Assets.zip", "--bind",
                      "0.0.0.0:" + os.environ.get("SERVER_PORT", "5520")])
         print("[HyPanel] Starte Hytale mit Java 25.", flush=True)

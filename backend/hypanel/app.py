@@ -52,7 +52,7 @@ async def lifespan(app):
     thread.join(timeout=2)
 
 
-app = FastAPI(title="HyPanel", version=VERSION, lifespan=lifespan)
+app = FastAPI(title="HyPanel", version=VERSION, lifespan=lifespan, docs_url=None, redoc_url=None)
 app.add_middleware(UploadLimitMiddleware)
 
 
@@ -776,4 +776,7 @@ def run_schedule(sid: str, jid: str, user: User):
 
 FRONTEND = Path(os.getenv("HYPANEL_FRONTEND", str(Path(__file__).resolve().parents[2] / "frontend")))
 if FRONTEND.exists():
+    @app.get("/docs", include_in_schema=False)
+    def api_docs():
+        return FileResponse(FRONTEND / "api.html")
     app.mount("/", StaticFiles(directory=FRONTEND, html=True), name="frontend")
