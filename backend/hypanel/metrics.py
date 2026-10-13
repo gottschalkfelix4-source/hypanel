@@ -27,7 +27,9 @@ def telemetry(sid, running=True):
 
 def host():
     memory = psutil.virtual_memory()
-    return {"cpu_percent": psutil.cpu_percent(), "memory_used": memory.used, "memory_total": memory.total,
+    # FastAPI uses different worker threads. An initial nonblocking read in each
+    # thread returns 0, so measure a short real interval for the host overview.
+    return {"cpu_percent": psutil.cpu_percent(interval=0.1), "memory_used": memory.used, "memory_total": memory.total,
             "uptime": max(0, time.time() - psutil.boot_time())}
 
 
